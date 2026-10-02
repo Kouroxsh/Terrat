@@ -7,6 +7,8 @@ import (
 	"terrat/internal/terminal"
 )
 
+var _ Renderer = (*Canvas)(nil)
+
 const (
 	HeaderHeight  = 34
 	PaddingLeft   = 16
@@ -242,6 +244,10 @@ func (c *Canvas) Cols() int {
 
 func (c *Canvas) Rows() int {
 	return c.rows
+}
+
+func (c *Canvas) Close() {
+	// CPU Canvas has no persistent OS graphics handles to release.
 }
 
 func (c *Canvas) setPixel(x, y int, pixel uint32) {
