@@ -50,11 +50,11 @@ contents:
     dst: /usr/share/applications/terraterminal.desktop
     file_info:
       mode: 0644
-  - src: ${ROOT_DIR}/icon.png
+  - src: ${ROOT_DIR}/assets/icon.png
     dst: /usr/share/icons/hicolor/512x512/apps/terrat.png
     file_info:
       mode: 0644
-  - src: ${ROOT_DIR}/icon.png
+  - src: ${ROOT_DIR}/assets/icon.png
     dst: /usr/share/icons/hicolor/512x512/apps/terraterminal.png
     file_info:
       mode: 0644
@@ -85,7 +85,7 @@ EOF
     cp "${BIN_SRC}" "${TARGET_SUBDIR}/terrat"
     chmod 755 "${TARGET_SUBDIR}/terrat"
     cp "${ROOT_DIR}/packaging/terrat.desktop" "${TARGET_SUBDIR}/"
-    cp "${ROOT_DIR}/icon.png" "${TARGET_SUBDIR}/"
+    cp "${ROOT_DIR}/assets/icon.png" "${TARGET_SUBDIR}/"
     cp "${ROOT_DIR}/packaging/portable-install.sh" "${TARGET_SUBDIR}/install.sh"
     chmod +x "${TARGET_SUBDIR}/install.sh"
     cp "${ROOT_DIR}/LICENSE" "${TARGET_SUBDIR}/"
@@ -105,7 +105,7 @@ for ARCH in amd64 arm64; do
     WIN_TARGET="${WIN_PORTABLE}/terrat-v${VERSION}-windows-${ARCH}"
     mkdir -p "${WIN_TARGET}"
     cp "${WIN_BIN}" "${WIN_TARGET}/terrat.exe"
-    cp "${ROOT_DIR}/icon.png" "${WIN_TARGET}/"
+    cp "${ROOT_DIR}/assets/icon.png" "${WIN_TARGET}/"
     cp "${ROOT_DIR}/LICENSE" "${WIN_TARGET}/"
 
     cat << 'CFG' > "${WIN_TARGET}/config.json"

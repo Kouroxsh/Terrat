@@ -10,7 +10,7 @@ import (
 	"terrat/pty"
 )
 
-//go:embed icon.png
+//go:embed assets/icon.png
 var embeddedIconPNG []byte
 
 const (

@@ -20,9 +20,9 @@ install: build
 	mkdir -p $(DESKTOP_DIR)
 	mkdir -p $(ICON_DIR)
 	install -m 755 $(BINARY) $(PREFIX)/$(BINARY)
-	cp icon.png $(PREFIX)/icon.png
-	cp icon.png $(ICON_DIR)/terraterminal.png
-	cp icon.png $(ICON_DIR)/terrat.png
+	cp assets/icon.png $(PREFIX)/icon.png
+	cp assets/icon.png $(ICON_DIR)/terraterminal.png
+	cp assets/icon.png $(ICON_DIR)/terrat.png
 	cp packaging/terrat.desktop $(DESKTOP_DIR)/terraterminal.desktop
 	cp packaging/terrat.desktop $(DESKTOP_DIR)/terrat.desktop
 	sed -i 's|Exec=.*|Exec=$(PREFIX)/$(BINARY)|g' $(DESKTOP_DIR)/terraterminal.desktop
