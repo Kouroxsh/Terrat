@@ -91,3 +91,33 @@ func TestFallbackAndBoxDrawing(t *testing.T) {
 		}
 	}
 }
+
+func TestVazirmatnPersianRendering(t *testing.T) {
+	fe, err := NewFontEngine(13.0)
+	if err != nil {
+		t.Fatalf("failed to create font engine: %v", err)
+	}
+	defer fe.Close()
+
+	if len(fe.fallbacks) == 0 {
+		t.Fatalf("expected at least one fallback font (Vazirmatn)")
+	}
+
+	// Test unique Persian alphabet runes: گ, چ, پ, ژ, ک, ی
+	persianSpecificRunes := []rune{'گ', 'چ', 'پ', 'ژ', 'ک', 'ی', '۰', '۱', '۲', '۹'}
+	for _, r := range persianSpecificRunes {
+		mask := fe.GetGlyph(r, false)
+		if mask == nil {
+			t.Fatalf("expected non-nil mask for Persian rune '%c' (U+%04X)", r, r)
+		}
+		nonZero := 0
+		for _, a := range mask.Alpha {
+			if a > 0 {
+				nonZero++
+			}
+		}
+		if nonZero == 0 {
+			t.Fatalf("expected Persian rune '%c' to render non-zero pixels in Vazirmatn", r)
+		}
+	}
+}
