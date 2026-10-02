@@ -764,8 +764,18 @@ func (w *Window) eventLoop() {
 			}
 		case xproto.ExposeEvent:
 			w.eventCh <- ExposeEvent{}
+		case xproto.FocusInEvent:
+			if w.keyHandler != nil {
+				w.keyHandler.RefreshXKBState(w.X)
+			}
 		case xproto.FocusOutEvent:
 			w.eventCh <- FocusOutEvent{}
+		case XKBStateNotifyEvent:
+			if len(e.Data) >= 14 && w.keyHandler != nil {
+				if e.Data[1] == 0 {
+					w.keyHandler.SetGroup(e.Data[13])
+				}
+			}
 		case xproto.MappingNotifyEvent:
 			if w.keyHandler != nil {
 				_ = w.keyHandler.RefreshMapping(w.X)

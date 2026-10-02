@@ -5,6 +5,7 @@ package platform
 import (
 	"testing"
 
+	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
 )
 
@@ -109,5 +110,97 @@ func TestTranslateNumpadAndAppCursor(t *testing.T) {
 	b, _ = kh.Translate(ev, true)
 	if string(b) != "\x1bOA" {
 		t.Fatalf("expected \\x1bOA in appCursor mode, got %q", string(b))
+	}
+}
+
+func TestXKBState(t *testing.T) {
+	conn, err := xgb.NewConn()
+	if err != nil {
+		t.Skip("no X server")
+	}
+	defer conn.Close()
+
+	ext, err := xproto.QueryExtension(conn, uint16(len("XKEYBOARD")), "XKEYBOARD").Reply()
+	if err != nil || ext == nil || !ext.Present {
+		t.Skip("XKEYBOARD not present")
+	}
+
+	buf := make([]byte, 8)
+	buf[0] = ext.MajorOpcode
+	buf[1] = 0 // X_kbUseExtension
+	xgb.Put16(buf[2:], 2)
+	xgb.Put16(buf[4:], 1)
+	xgb.Put16(buf[6:], 0)
+
+	cookie := conn.NewCookie(true, true)
+	conn.NewRequest(buf, cookie)
+	reply, err := cookie.Reply()
+	if err != nil {
+		t.Fatalf("X_kbUseExtension error: %v", err)
+	}
+	t.Logf("X_kbUseExtension supported=%v", reply[1] != 0)
+
+	reqState := make([]byte, 8)
+	reqState[0] = ext.MajorOpcode
+	reqState[1] = 4 // X_kbGetState
+	xgb.Put16(reqState[2:], 2)
+	xgb.Put16(reqState[4:], 0x0100) // XkbUseCoreKbd
+
+	cookieState := conn.NewCookie(true, true)
+	conn.NewRequest(reqState, cookieState)
+	replyState, err := cookieState.Reply()
+	if err != nil {
+		t.Fatalf("X_kbGetState error: %v", err)
+	}
+	t.Logf("X_kbGetState group=%d, lockedGroup=%d", replyState[12], replyState[13])
+	reqSelect := make([]byte, 16)
+	reqSelect[0] = ext.MajorOpcode
+	reqSelect[1] = 1 // X_kbSelectEvents
+	xgb.Put16(reqSelect[2:], 4) // 16 bytes / 4
+	xgb.Put16(reqSelect[4:], 0x0100) // XkbUseCoreKbd
+	xgb.Put16(reqSelect[6:], 0x0010) // affectWhich: XkbStateNotify (1<<4)
+	xgb.Put16(reqSelect[8:], 0)      // clear
+	xgb.Put16(reqSelect[10:], 0x0010) // selectAll: XkbStateNotify (1<<4)
+	xgb.Put16(reqSelect[12:], 0)     // affectMap
+	xgb.Put16(reqSelect[14:], 0)     // map
+
+	cookieSelect := conn.NewCookie(true, false)
+	conn.NewRequest(reqSelect, cookieSelect)
+	if err := cookieSelect.Check(); err != nil {
+		t.Fatalf("X_kbSelectEvents error: %v", err)
+	}
+	t.Logf("X_kbSelectEvents succeeded!")
+}
+
+func TestPersianGroupTranslation(t *testing.T) {
+	kh := &KeyHandler{
+		minKeycode:        38,
+		maxKeycode:        38,
+		keysymsPerKeycode: 4,
+		keysyms: []xproto.Keysym{
+			'a', 'A', 0x05d4, 0x064e, // sheen (ش), fatha
+		},
+	}
+
+	// 1. Group 0 (English)
+	evEN := xproto.KeyPressEvent{Detail: 38, State: 0}
+	bEN, _ := kh.Translate(evEN)
+	if string(bEN) != "a" {
+		t.Fatalf("expected 'a' in group 0, got %q", string(bEN))
+	}
+
+	// 2. Group 1 via ev.State (bits 13-14)
+	evFA := xproto.KeyPressEvent{Detail: 38, State: 1 << 13}
+	bFA, _ := kh.Translate(evFA)
+	if string(bFA) != "ش" {
+		t.Fatalf("expected 'ش' in group 1 via State, got %q", string(bFA))
+	}
+
+	// 3. Group 1 via kh.activeGroup
+	kh.SetGroup(1)
+	evFA2 := xproto.KeyPressEvent{Detail: 38, State: 0}
+	bFA2, _ := kh.Translate(evFA2)
+	if string(bFA2) != "ش" {
+		t.Fatalf("expected 'ش' in group 1 via activeGroup, got %q", string(bFA2))
 	}
 }

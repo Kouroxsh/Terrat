@@ -15,7 +15,20 @@ type KeyHandler struct {
 	keysymsPerKeycode byte
 	keysyms           []xproto.Keysym
 	numLockMask       uint16
+	modeSwitchMask    uint16
+	xkbSupported      bool
+	xkbOpcode         byte
+	xkbBaseEvent      byte
+	activeGroup       byte
 }
+
+// XKBStateNotifyEvent is delivered when the XKB keyboard layout/group changes.
+type XKBStateNotifyEvent struct {
+	Data []byte
+}
+
+func (e XKBStateNotifyEvent) Bytes() []byte  { return e.Data }
+func (e XKBStateNotifyEvent) String() string { return "XKBStateNotify" }
 
 func NewKeyHandler(X *xgb.Conn) (*KeyHandler, error) {
 	setup := xproto.Setup(X)
@@ -36,6 +49,7 @@ func NewKeyHandler(X *xgb.Conn) (*KeyHandler, error) {
 		numLockMask:       0x10, // Mod2 default
 	}
 	kh.detectNumLockMask(X)
+	kh.initXKB(X)
 	return kh, nil
 }
 
@@ -55,13 +69,85 @@ func (kh *KeyHandler) detectNumLockMask(X *xgb.Conn) {
 			}
 			idx := int(kc-kh.minKeycode) * int(kh.keysymsPerKeycode)
 			for c := 0; c < int(kh.keysymsPerKeycode); c++ {
-				if idx+c < len(kh.keysyms) && kh.keysyms[idx+c] == 0xff7f { // XK_Num_Lock
-					kh.numLockMask = mask
-					return
+				if idx+c < len(kh.keysyms) {
+					sym := kh.keysyms[idx+c]
+					if sym == 0xff7f { // XK_Num_Lock
+						kh.numLockMask = mask
+					} else if sym == 0xff7e || sym == 0xfe08 || sym == 0xfe09 || sym == 0xfe03 { // Mode_switch / ISO_Group_Shift
+						kh.modeSwitchMask = mask
+					}
 				}
 			}
 		}
 	}
+}
+
+func (kh *KeyHandler) initXKB(X *xgb.Conn) {
+	ext, err := xproto.QueryExtension(X, uint16(len("XKEYBOARD")), "XKEYBOARD").Reply()
+	if err != nil || ext == nil || !ext.Present {
+		return
+	}
+	kh.xkbOpcode = ext.MajorOpcode
+	kh.xkbBaseEvent = ext.FirstEvent
+
+	buf := make([]byte, 8)
+	buf[0] = ext.MajorOpcode
+	buf[1] = 0 // X_kbUseExtension
+	xgb.Put16(buf[2:], 2)
+	xgb.Put16(buf[4:], 1)
+	xgb.Put16(buf[6:], 0)
+
+	cookie := X.NewCookie(true, true)
+	X.NewRequest(buf, cookie)
+	reply, err := cookie.Reply()
+	if err != nil || len(reply) < 8 || reply[1] == 0 {
+		return
+	}
+	kh.xkbSupported = true
+
+	reqSelect := make([]byte, 16)
+	reqSelect[0] = ext.MajorOpcode
+	reqSelect[1] = 1 // X_kbSelectEvents
+	xgb.Put16(reqSelect[2:], 4)
+	xgb.Put16(reqSelect[4:], 0x0100) // XkbUseCoreKbd
+	xgb.Put16(reqSelect[6:], 0x0010) // affectWhich: XkbStateNotify (1<<4)
+	xgb.Put16(reqSelect[8:], 0)
+	xgb.Put16(reqSelect[10:], 0x0010) // selectAll: XkbStateNotify (1<<4)
+
+	cookieSelect := X.NewCookie(false, false)
+	X.NewRequest(reqSelect, cookieSelect)
+
+	xgb.NewEventFuncs[int(ext.FirstEvent)] = func(b []byte) xgb.Event {
+		return XKBStateNotifyEvent{Data: b}
+	}
+
+	kh.RefreshXKBState(X)
+}
+
+func (kh *KeyHandler) RefreshXKBState(X *xgb.Conn) {
+	if !kh.xkbSupported || kh.xkbOpcode == 0 {
+		return
+	}
+	reqState := make([]byte, 8)
+	reqState[0] = kh.xkbOpcode
+	reqState[1] = 4 // X_kbGetState
+	xgb.Put16(reqState[2:], 2)
+	xgb.Put16(reqState[4:], 0x0100) // XkbUseCoreKbd
+
+	cookieState := X.NewCookie(true, true)
+	X.NewRequest(reqState, cookieState)
+	replyState, err := cookieState.Reply()
+	if err == nil && len(replyState) >= 14 {
+		kh.activeGroup = replyState[12] & 3
+	}
+}
+
+func (kh *KeyHandler) SetGroup(group byte) {
+	kh.activeGroup = group & 3
+}
+
+func (kh *KeyHandler) ActiveGroup() byte {
+	return kh.activeGroup
 }
 
 func (kh *KeyHandler) KeySym(ev xproto.KeyPressEvent) xproto.Keysym {
@@ -76,6 +162,13 @@ func (kh *KeyHandler) KeySym(ev xproto.KeyPressEvent) xproto.Keysym {
 
 	// In X11, bits 13-14 specify keyboard group (0-3) for layout switching
 	group := int((ev.State >> 13) & 3)
+	if group == 0 && kh.modeSwitchMask != 0 && (ev.State&kh.modeSwitchMask) != 0 {
+		group = 1
+	}
+	if group == 0 && kh.activeGroup != 0 {
+		group = int(kh.activeGroup)
+	}
+
 	col := group * 2
 	if col >= int(kh.keysymsPerKeycode) {
 		col = 0
@@ -143,6 +236,7 @@ func (kh *KeyHandler) RefreshMapping(X *xgb.Conn) error {
 	kh.keysymsPerKeycode = mapping.KeysymsPerKeycode
 	kh.keysyms = mapping.Keysyms
 	kh.detectNumLockMask(X)
+	kh.RefreshXKBState(X)
 	return nil
 }
 
