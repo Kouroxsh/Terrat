@@ -10,8 +10,6 @@ import (
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
-
-	"terrat/assets"
 )
 
 type GlyphMask struct {
@@ -48,10 +46,6 @@ var candidateTTFFonts = []string{
 }
 
 var candidateFallbackFonts = []string{
-	"/usr/share/fonts/truetype/vazirmatn/Vazirmatn-Regular.ttf",
-	"/usr/share/fonts/truetype/vazir/Vazir-Regular.ttf",
-	"/usr/share/fonts/opentype/vazirmatn/Vazirmatn-Regular.otf",
-	"/usr/share/fonts/truetype/vazirmatn/Vazirmatn[wght].ttf",
 	"/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
 	"/usr/share/fonts/truetype/noto/NotoSansArabicUI-Regular.ttf",
 	"/usr/share/fonts/truetype/noto/NotoSansArabicUI-Bold.ttf",
@@ -67,16 +61,6 @@ var candidateFallbackFonts = []string{
 }
 
 func init() {
-	if home := os.Getenv("HOME"); home != "" {
-		candidateFallbackFonts = append([]string{
-			filepath.Join(home, ".local", "share", "fonts", "Vazirmatn-Regular.ttf"),
-			filepath.Join(home, ".local", "share", "fonts", "Vazir-Regular.ttf"),
-			filepath.Join(home, ".local", "share", "fonts", "font.ttf"),
-			filepath.Join(home, ".fonts", "Vazirmatn-Regular.ttf"),
-			filepath.Join(home, ".fonts", "Vazir-Regular.ttf"),
-		}, candidateFallbackFonts...)
-	}
-
 	windir := os.Getenv("WINDIR")
 	if windir == "" {
 		windir = `C:\Windows`
@@ -87,23 +71,6 @@ func init() {
 		filepath.Join(windir, "Fonts", "consola.ttf"),
 		filepath.Join(windir, "Fonts", "lucon.ttf"),
 	}, candidateTTFFonts...)
-
-	localAppData := os.Getenv("LOCALAPPDATA")
-	var winVazirFonts []string
-	if localAppData != "" {
-		winVazirFonts = append(winVazirFonts,
-			filepath.Join(localAppData, "Microsoft", "Windows", "Fonts", "Vazirmatn-Regular.ttf"),
-			filepath.Join(localAppData, "Microsoft", "Windows", "Fonts", "Vazirmatn.ttf"),
-			filepath.Join(localAppData, "Microsoft", "Windows", "Fonts", "Vazir-Regular.ttf"),
-		)
-	}
-	winVazirFonts = append(winVazirFonts,
-		filepath.Join(windir, "Fonts", "Vazirmatn-Regular.ttf"),
-		filepath.Join(windir, "Fonts", "Vazirmatn.ttf"),
-		filepath.Join(windir, "Fonts", "Vazir-Regular.ttf"),
-	)
-	candidateFallbackFonts = append(winVazirFonts, candidateFallbackFonts...)
-
 	candidateFallbackFonts = append([]string{
 		filepath.Join(windir, "Fonts", "segoeui.ttf"),
 		filepath.Join(windir, "Fonts", "seguiemj.ttf"),
@@ -177,22 +144,6 @@ func (fe *FontEngine) loadFallbacks(fontSize float64) {
 		}
 	}
 	fe.fallbacks = nil
-
-	// Priority 1: Official Embedded Vazirmatn font (100% guarantee across all OS & environments)
-	if len(assets.VazirmatnTTF) > 0 {
-		if otf, err := opentype.Parse(assets.VazirmatnTTF); err == nil {
-			if face, err := opentype.NewFace(otf, &opentype.FaceOptions{
-				Size:    fontSize,
-				DPI:     72,
-				Hinting: font.HintingFull,
-			}); err == nil {
-				fe.fallbacks = append(fe.fallbacks, fallbackFont{
-					face: face,
-					otf:  otf,
-				})
-			}
-		}
-	}
 
 	for _, path := range candidateFallbackFonts {
 		data, err := os.ReadFile(path)
@@ -380,18 +331,7 @@ func (fe *FontEngine) rasterizeRune(r rune, bold bool) *GlyphMask {
 
 	dst := image.NewAlpha(image.Rect(0, 0, fe.charWidth, fe.charHeight))
 
-	dotX := 0
-	if bounds, adv, ok := useFace.GlyphBounds(r); ok && adv > 0 {
-		advW := adv.Ceil()
-		if advW < fe.charWidth {
-			dotX = (fe.charWidth - advW) / 2
-		}
-		if bounds.Min.X < 0 && dotX < -bounds.Min.X.Floor() {
-			dotX = -bounds.Min.X.Floor()
-		}
-	}
-
-	dot := fixed.P(dotX, fe.baseline)
+	dot := fixed.P(0, fe.baseline)
 	d := &font.Drawer{
 		Dst:  dst,
 		Src:  image.Opaque,
@@ -401,7 +341,7 @@ func (fe *FontEngine) rasterizeRune(r rune, bold bool) *GlyphMask {
 	d.DrawString(string(r))
 
 	if bold {
-		d.Dot = fixed.P(dotX+1, fe.baseline)
+		d.Dot = fixed.P(1, fe.baseline)
 		d.DrawString(string(r))
 	}
 
