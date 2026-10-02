@@ -8,7 +8,7 @@ DESKTOP_DIR=$(HOME)/.local/share/applications
 all: build
 
 build:
-	GOTOOLCHAIN=local go build -ldflags="-s -w -X main.Version=$(VERSION)" -o $(BINARY) .
+	GOTOOLCHAIN=local go build -ldflags="-s -w -X main.Version=$(VERSION)" -o $(BINARY) ./cmd/terrat
 
 run: build
 	./$(BINARY)

@@ -1,10 +1,11 @@
-package main
+package app
 
 import (
 	"context"
 	"sync"
-	"terrat/pty"
-	"terrat/terminal"
+
+	"terrat/internal/pty"
+	"terrat/internal/terminal"
 )
 
 type tabTitleMsg struct {

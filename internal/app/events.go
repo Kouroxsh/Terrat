@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"fmt"
@@ -9,11 +9,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"terrat/config"
-	"terrat/diagnostics"
-	"terrat/platform"
-	"terrat/render"
-	"terrat/terminal"
+	"terrat/internal/config"
+	"terrat/internal/diagnostics"
+	"terrat/internal/platform"
+	"terrat/internal/render"
+	"terrat/internal/terminal"
 )
 
 func (a *App) toCellCoords(pixelX, pixelY int) (int, int) {

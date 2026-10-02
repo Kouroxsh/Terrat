@@ -2,8 +2,9 @@ package render
 
 import (
 	"fmt"
-	"terrat/terminal"
 	"unicode/utf8"
+
+	"terrat/internal/terminal"
 )
 
 const (

@@ -1,13 +1,13 @@
-package main
+package app
 
 import (
 	"context"
 	"strings"
 	"testing"
 
-	"terrat/config"
-	"terrat/platform"
-	"terrat/terminal"
+	"terrat/internal/config"
+	"terrat/internal/platform"
+	"terrat/internal/terminal"
 )
 
 func TestURLRegexDetection(t *testing.T) {

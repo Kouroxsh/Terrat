@@ -23,7 +23,7 @@ echo "Building Linux distribution packages for v${VERSION}..."
 for ARCH in amd64 arm64; do
     BIN_SRC="${DIST_DIR}/terrat-linux-${ARCH}"
     echo "Compiling Linux binary for ${ARCH}..."
-    GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH="${ARCH}" go build -ldflags="-s -w -X main.Version=${VERSION}" -o "${BIN_SRC}" "${ROOT_DIR}"
+    GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH="${ARCH}" go build -ldflags="-s -w -X main.Version=${VERSION}" -o "${BIN_SRC}" "${ROOT_DIR}/cmd/terrat"
 
     NFPM_CONFIG=$(mktemp --suffix=.yaml)
     cat << EOF > "${NFPM_CONFIG}"
@@ -98,7 +98,7 @@ echo "Building Windows portable bundles for v${VERSION}..."
 for ARCH in amd64 arm64; do
     WIN_BIN="${DIST_DIR}/terrat-windows-${ARCH}.exe"
     echo "Compiling Windows binary for ${ARCH}..."
-    GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=windows GOARCH="${ARCH}" go build -ldflags="-s -w -H=windowsgui -X main.Version=${VERSION}" -o "${WIN_BIN}" "${ROOT_DIR}"
+    GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=windows GOARCH="${ARCH}" go build -ldflags="-s -w -H=windowsgui -X main.Version=${VERSION}" -o "${WIN_BIN}" "${ROOT_DIR}/cmd/terrat"
 
     echo "Packaging Windows portable zip for ${ARCH}..."
     WIN_PORTABLE=$(mktemp -d)

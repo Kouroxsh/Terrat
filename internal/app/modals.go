@@ -1,13 +1,14 @@
-package main
+package app
 
 import (
 	"fmt"
 	"os/exec"
 	"regexp"
 	"runtime"
-	"terrat/config"
-	"terrat/render"
-	"terrat/terminal"
+
+	"terrat/internal/config"
+	"terrat/internal/render"
+	"terrat/internal/terminal"
 )
 
 var urlRegex = regexp.MustCompile(`https?://[^\s<>"'()]+`)

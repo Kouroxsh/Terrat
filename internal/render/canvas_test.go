@@ -2,7 +2,8 @@ package render
 
 import (
 	"testing"
-	"terrat/terminal"
+
+	"terrat/internal/terminal"
 )
 
 func TestRenderPreferencesModal(t *testing.T) {

@@ -1,17 +1,14 @@
 package main
 
 import (
-	_ "embed"
 	"flag"
 	"fmt"
 	"os"
 
-	"terrat/config"
-	"terrat/pty"
+	"terrat/internal/app"
+	"terrat/internal/config"
+	"terrat/internal/pty"
 )
-
-//go:embed assets/icon.png
-var embeddedIconPNG []byte
 
 const (
 	AppName = "TerraTerminal"
@@ -38,7 +35,7 @@ func main() {
 	fs := flag.NewFlagSet("terrat", flag.ContinueOnError)
 	verFlag := fs.Bool("v", false, "Print version and exit")
 	versionFlag := fs.Bool("version", false, "Print version and exit")
-	titleFlag := fs.String("title", AppName, "Set initial window title")
+	titleFlag := fs.String("title", app.AppName, "Set initial window title")
 	fontSizeFlag := fs.Float64("font-size", 0.0, "Font size in points (defaults to config)")
 	themeFlag := fs.String("theme", "", "Color theme override (tokyo-night, catppuccin-mocha, minecraft, tokyo-day, solarized-light)")
 	shellFlag := fs.String("shell", "", "Default shell override (e.g., bash, wsl.exe, powershell.exe)")
@@ -61,14 +58,14 @@ func main() {
 		appConfig.Theme = *themeFlag
 	}
 
-	app, err := NewApp(appConfig, *titleFlag, customCmd)
+	a, err := app.NewApp(appConfig, *titleFlag, customCmd)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing TerraTerminal: %v\n", err)
 		os.Exit(1)
 	}
-	defer app.Close()
+	defer a.Close()
 
-	if err := app.Run(); err != nil {
+	if err := a.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running TerraTerminal: %v\n", err)
 		os.Exit(1)
 	}

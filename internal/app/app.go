@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -8,13 +8,18 @@ import (
 	"strings"
 	"time"
 
-	"terrat/autosuggest"
-	"terrat/config"
-	"terrat/diagnostics"
-	"terrat/paste"
-	"terrat/platform"
-	"terrat/render"
-	"terrat/terminal"
+	"terrat/assets"
+	"terrat/internal/autosuggest"
+	"terrat/internal/config"
+	"terrat/internal/diagnostics"
+	"terrat/internal/paste"
+	"terrat/internal/platform"
+	"terrat/internal/render"
+	"terrat/internal/terminal"
+)
+
+const (
+	AppName = "TerraTerminal"
 )
 
 type App struct {
@@ -94,7 +99,7 @@ func NewApp(cfg *config.Config, initialTitle string, customCmd []string) (*App, 
 	initWidth := uint16(render.PaddingLeft + (initCols * fontEngine.CharWidth()) + render.PaddingRight)
 	initHeight := uint16(render.HeaderHeight + render.PaddingTop + (initRows * fontEngine.CharHeight()) + render.PaddingBottom)
 
-	win, err := platform.NewWindow(initialTitle, initWidth, initHeight, "", embeddedIconPNG)
+	win, err := platform.NewWindow(initialTitle, initWidth, initHeight, "", assets.IconPNG)
 	if err != nil {
 		fontEngine.Close()
 		return nil, fmt.Errorf("creating window: %w", err)
