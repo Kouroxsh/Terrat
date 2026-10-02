@@ -74,3 +74,4 @@ nohup.out
 *.log
 *.tmp
 *.bak
+complete_project.txt
