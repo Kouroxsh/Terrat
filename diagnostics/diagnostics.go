@@ -246,77 +246,11 @@ func isSafeOperation(cmd string, parts []string) bool {
 	}
 	sub := strings.ToLower(parts[1])
 	for _, safe := range safeOps {
-		if sub == safe || strings.HasPrefix(sub, safe) {
+		if sub == safe {
 			return true
 		}
 	}
 	return false
-}
-
-func splitCommandPrefix(input string) (prefix string, activeSeg string) {
-	delims := []string{"&&", "||", ";", "|"}
-	lastIdx := -1
-	delimLen := 0
-
-	for _, delim := range delims {
-		idx := strings.LastIndex(input, delim)
-		if idx > lastIdx {
-			lastIdx = idx
-			delimLen = len(delim)
-		}
-	}
-
-	if lastIdx >= 0 && lastIdx+delimLen <= len(input) {
-		p := input[:lastIdx+delimLen]
-		rem := input[lastIdx+delimLen:]
-		trimmedRem := strings.TrimLeft(rem, " \t")
-		p += rem[:len(rem)-len(trimmedRem)]
-		return p, strings.TrimSpace(trimmedRem)
-	}
-
-	trimmed := strings.TrimLeft(input, " \t")
-	return input[:len(input)-len(trimmed)], strings.TrimSpace(trimmed)
-}
-
-func tokenizeCommand(seg string) []string {
-	var tokens []string
-	var cur strings.Builder
-	inSingle := false
-	inDouble := false
-	escaped := false
-
-	for i := 0; i < len(seg); i++ {
-		b := seg[i]
-		if escaped {
-			cur.WriteByte(b)
-			escaped = false
-			continue
-		}
-		if b == '\\' && !inSingle {
-			escaped = true
-			continue
-		}
-		if b == '\'' && !inDouble {
-			inSingle = !inSingle
-			continue
-		}
-		if b == '"' && !inSingle {
-			inDouble = !inDouble
-			continue
-		}
-		if (b == ' ' || b == '\t') && !inSingle && !inDouble {
-			if cur.Len() > 0 {
-				tokens = append(tokens, cur.String())
-				cur.Reset()
-			}
-			continue
-		}
-		cur.WriteByte(b)
-	}
-	if cur.Len() > 0 {
-		tokens = append(tokens, cur.String())
-	}
-	return tokens
 }
 
 func unnestSudo(parts []string) (cleanedParts []string, hasSudo bool) {
@@ -348,16 +282,8 @@ func Analyze(rawInput string) *Diagnostic {
 		return nil
 	}
 
-	singleQuoteCount := 0
-	doubleQuoteCount := 0
-	for _, r := range rawInput {
-		if r == '\'' {
-			singleQuoteCount++
-		} else if r == '"' {
-			doubleQuoteCount++
-		}
-	}
-	if singleQuoteCount%2 != 0 {
+	lex := LexCommandLine(rawInput)
+	if lex.UnclosedQuote == QuoteSingle {
 		return &Diagnostic{
 			Severity:   SeverityWarning,
 			Message:    "Unclosed single quote string (')",
@@ -365,7 +291,7 @@ func Analyze(rawInput string) *Diagnostic {
 			QuickFix:   rawInput + "'",
 		}
 	}
-	if doubleQuoteCount%2 != 0 {
+	if lex.UnclosedQuote == QuoteDouble {
 		return &Diagnostic{
 			Severity:   SeverityWarning,
 			Message:    "Unclosed double quote string (\")",
@@ -374,12 +300,13 @@ func Analyze(rawInput string) *Diagnostic {
 		}
 	}
 
-	prefix, activeSeg := splitCommandPrefix(trimmed)
+	prefix := lex.Prefix
+	activeSeg := lex.ActiveSegment
 	if len(activeSeg) < 2 {
 		return nil
 	}
 
-	parts := tokenizeCommand(activeSeg)
+	parts := lex.Tokens
 	if len(parts) == 0 {
 		return nil
 	}
@@ -445,7 +372,16 @@ func Analyze(rawInput string) *Diagnostic {
 							maxD = 2
 						}
 						if match := FindClosestMatch(sub, subCandidates, maxD); match != "" {
-							fixedLine := strings.Replace(activeSeg, baseCmd+" "+sub, baseCmd+" "+match, 1)
+							fixedLine := activeSeg
+							baseIdx := strings.Index(activeSeg, baseCmd)
+							if baseIdx != -1 {
+								afterBase := activeSeg[baseIdx+len(baseCmd):]
+								relSubIdx := strings.Index(afterBase, sub)
+								if relSubIdx != -1 {
+									subIdx := baseIdx + len(baseCmd) + relSubIdx
+									fixedLine = activeSeg[:subIdx] + match + activeSeg[subIdx+len(sub):]
+								}
+							}
 							return &Diagnostic{
 								Severity:   SeverityError,
 								Message:    fmt.Sprintf("Unknown %s subcommand '%s'", baseCmd, sub),

@@ -146,6 +146,12 @@ func (t *Terminal) CursorLocked() (int, int, bool) {
 }
 
 func (t *Terminal) GetCell(x, y int) Cell {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.GetCellLocked(x, y)
+}
+
+func (t *Terminal) GetCellLocked(x, y int) Cell {
 	if y < 0 || y >= t.rows || x < 0 || x >= t.cols {
 		return EmptyCell()
 	}
@@ -250,7 +256,7 @@ func (t *Terminal) GetRowString(y int) string {
 
 	runes := make([]rune, t.cols)
 	for x := 0; x < t.cols; x++ {
-		cell := t.GetCell(x, y)
+		cell := t.GetCellLocked(x, y)
 		r := cell.Char
 		if r == 0 {
 			r = ' '

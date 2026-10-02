@@ -57,3 +57,14 @@ func TestSanitizeControlCharacters(t *testing.T) {
 		t.Fatalf("expected %q, got %q", expected, res.Sanitized)
 	}
 }
+
+func TestSanitizePersianZWNJ(t *testing.T) {
+	persianText := "می\u200Cشود خانه\u200Cها"
+	res := Sanitize(persianText)
+	if res.Sanitized != persianText {
+		t.Fatalf("expected Persian ZWNJ to be preserved, got %q", res.Sanitized)
+	}
+	if len(res.Warnings) != 0 {
+		t.Fatalf("expected no warnings for Persian ZWNJ, got %v", res.Warnings)
+	}
+}

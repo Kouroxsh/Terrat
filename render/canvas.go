@@ -489,7 +489,7 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 		cellY := gridStartY + (y * charH)
 
 		for x := 0; x < c.cols; x++ {
-			cell := term.GetCell(x, y)
+			cell := term.GetCellLocked(x, y)
 			cellX := gridStartX + (x * charW)
 
 			fg := cell.FG
@@ -593,7 +593,7 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 			if gx >= c.cols {
 				break
 			}
-			cell := term.GetCell(gx, effectiveCurY)
+			cell := term.GetCellLocked(gx, effectiveCurY)
 			if cell.Char != 0 && cell.Char != ' ' {
 				break
 			}

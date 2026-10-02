@@ -60,6 +60,7 @@ var (
 	procGlobalUnlock            = modKernel.NewProc("GlobalUnlock")
 	procGlobalFree              = modKernel.NewProc("GlobalFree")
 	procRtlMoveMemory           = modKernel.NewProc("RtlMoveMemory")
+	procLstrlenW                = modKernel.NewProc("lstrlenW")
 	procAttachConsole           = modKernel.NewProc("AttachConsole")
 
 	procStretchDIBits           = modGdi32.NewProc("StretchDIBits")
@@ -848,13 +849,21 @@ func (w *Window) Paste() {
 		return
 	}
 
-	ptr, _, _ := procGlobalLock.Call(hData)
-	if ptr == 0 {
+	pMem, _, _ := procGlobalLock.Call(hData)
+	if pMem == 0 {
 		return
 	}
 	defer procGlobalUnlock.Call(hData)
 
-	text := windows.UTF16PtrToString((*uint16)(unsafe.Pointer(ptr)))
+	lenW, _, _ := procLstrlenW.Call(pMem)
+	if lenW == 0 {
+		return
+	}
+
+	buf := make([]uint16, lenW)
+	procRtlMoveMemory.Call(uintptr(unsafe.Pointer(&buf[0])), pMem, lenW*2)
+
+	text := string(utf16.Decode(buf))
 	if text != "" {
 		w.eventCh <- PasteNotifyEvent{Text: text}
 	}

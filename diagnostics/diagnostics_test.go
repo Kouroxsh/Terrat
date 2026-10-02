@@ -198,3 +198,57 @@ func TestChainedCommandQuickFix(t *testing.T) {
 	}
 }
 
+func TestLexerEdgeCases(t *testing.T) {
+	// Chaining operator inside double quotes should not split
+	lex := LexCommandLine(`echo "hello && world"`)
+	if lex.Prefix != "" {
+		t.Fatalf("expected empty prefix, got %q", lex.Prefix)
+	}
+	if lex.ActiveSegment != `echo "hello && world"` {
+		t.Fatalf("expected full segment, got %q", lex.ActiveSegment)
+	}
+	if len(lex.Tokens) != 2 || lex.Tokens[1] != "hello && world" {
+		t.Fatalf("expected tokenized arguments without quotes, got %v", lex.Tokens)
+	}
+
+	// Single quote inside double quotes should not report unclosed single quote
+	lexQuotes := LexCommandLine(`echo "it's working"`)
+	if lexQuotes.UnclosedQuote != QuoteNone {
+		t.Fatalf("expected no unclosed quote, got %v", lexQuotes.UnclosedQuote)
+	}
+
+	// Escaped operator should not split
+	lexEscaped := LexCommandLine(`echo hello \&\& world`)
+	if lexEscaped.Prefix != "" {
+		t.Fatalf("expected empty prefix for escaped &&, got %q", lexEscaped.Prefix)
+	}
+}
+
+func TestSafeOperationsExactMatching(t *testing.T) {
+	// Safe operation exact match: apt search does not require root
+	if !isSafeOperation("apt", []string{"apt", "search", "neovim"}) {
+		t.Fatalf("expected apt search to be recognized as safe")
+	}
+
+	// Fake operation with same prefix: apt searchsomething must NOT match
+	if isSafeOperation("apt", []string{"apt", "searchsomething", "neovim"}) {
+		t.Fatalf("expected apt searchsomething to NOT match safe operation")
+	}
+}
+
+func TestLexerUnicodeContinuationByte(t *testing.T) {
+	// Rune \u0585 has UTF-8 encoding []byte{0xd6, 0x85}. 0x85 must not be treated as Latin-1 NEL whitespace.
+	input := "echo \u0585test"
+	lex := LexCommandLine(input)
+	if len(lex.Tokens) != 2 || lex.Tokens[1] != "\u0585test" {
+		t.Fatalf("expected token %q, got %v", "\u0585test", lex.Tokens)
+	}
+}
+
+func TestSubcommandExtraWhitespaceQuickFix(t *testing.T) {
+	diag := Analyze("git   stauts")
+	if diag == nil || diag.QuickFix != "git   status" {
+		t.Fatalf("expected quick fix 'git   status', got %#v", diag)
+	}
+}
+

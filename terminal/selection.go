@@ -200,13 +200,13 @@ func (t *Terminal) findWordBounds(x, y int) (int, int) {
 		return x, x
 	}
 
-	targetRune := t.GetCell(x, y).Char
+	targetRune := t.GetCellLocked(x, y).Char
 	targetIsWord := isWordChar(targetRune)
 	targetIsSpace := targetRune == 0 || targetRune == ' '
 
 	left := x
 	for left > 0 {
-		prev := t.GetCell(left-1, y).Char
+		prev := t.GetCellLocked(left-1, y).Char
 		if targetIsWord && isWordChar(prev) {
 			left--
 		} else if targetIsSpace && (prev == 0 || prev == ' ') {
@@ -220,7 +220,7 @@ func (t *Terminal) findWordBounds(x, y int) (int, int) {
 
 	right := x
 	for right < t.cols-1 {
-		next := t.GetCell(right+1, y).Char
+		next := t.GetCellLocked(right+1, y).Char
 		if targetIsWord && isWordChar(next) {
 			right++
 		} else if targetIsSpace && (next == 0 || next == ' ') {
@@ -384,7 +384,7 @@ func (t *Terminal) GetSelectedText() string {
 
 		var lineRunes []rune
 		for x := colStart; x <= colEnd; x++ {
-			r := t.GetCell(x, y).Char
+			r := t.GetCellLocked(x, y).Char
 			if r == 0 {
 				r = ' '
 			}

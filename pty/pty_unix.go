@@ -97,7 +97,8 @@ func (p *TerminalPTY) Wait() (*os.ProcessState, error) {
 	if p.cmd == nil {
 		return nil, nil
 	}
-	return p.cmd.ProcessState, p.cmd.Wait()
+	err := p.cmd.Wait()
+	return p.cmd.ProcessState, err
 }
 
 func (p *TerminalPTY) IsForegroundShell() bool {

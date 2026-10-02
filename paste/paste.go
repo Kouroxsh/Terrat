@@ -51,7 +51,6 @@ func Sanitize(raw string) SanitizeResult {
 func isDangerousUnicode(r rune) bool {
 	switch r {
 	case '\u200B',
-		'\u200C',
 		'\u200D',
 		'\u2060',
 		'\uFEFF',

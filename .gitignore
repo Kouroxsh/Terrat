@@ -8,18 +8,32 @@ terrat-*
 *.dylib
 bin/
 dist/
-dist
 release/
+
+# Distribution Packages & Archives
+*.deb
+*.rpm
+*.pkg.tar.zst
+*.pkg.tar.xz
 *.tar.gz
 *.zip
 
-# Go Artifacts & Testing
+# Go Artifacts, Profiles & Testing
 *.test
 *.out
 *.prof
 *.pprof
+coverage.html
+coverage.txt
+*.coverage
 
-# Node.js & Web Site
+# Local Runtime & Development Configuration
+/config.json
+.env
+.env.local
+.env.*.local
+
+# Node.js & Web Frontend
 node_modules/
 site/node_modules/
 site/dist/
@@ -39,8 +53,10 @@ pnpm-debug.log*
 .*.swp
 .*.swo
 .directory
+*.sublime-project
+*.sublime-workspace
 
-# Operating System Files
+# Operating System & Core Dumps
 .DS_Store
 .DS_Store?
 ._*
@@ -49,6 +65,10 @@ pnpm-debug.log*
 ehthumbs.db
 Thumbs.db
 .fuse_hidden*
+core
+core.*
+nohup.out
+.cache/
 
 # Logs & Temporary Files
 *.log

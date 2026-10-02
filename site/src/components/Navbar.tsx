@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Terminal, Sparkles, Copy, Check } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
 import { GithubIcon } from './GithubIcon';
 
 export const Navbar: React.FC = () => {

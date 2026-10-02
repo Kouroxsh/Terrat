@@ -1,5 +1,5 @@
 BINARY=terrat
-VERSION?=0.2.3
+VERSION?=0.2.5
 PREFIX?=$(HOME)/go/bin
 DESKTOP_DIR=$(HOME)/.local/share/applications
 
@@ -8,7 +8,7 @@ DESKTOP_DIR=$(HOME)/.local/share/applications
 all: build
 
 build:
-	GOTOOLCHAIN=local go build -ldflags="-s -w -X main.Version=$(VERSION)" -o $(BINARY) main.go
+	GOTOOLCHAIN=local go build -ldflags="-s -w -X main.Version=$(VERSION)" -o $(BINARY) .
 
 run: build
 	./$(BINARY)

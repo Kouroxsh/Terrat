@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Terminal as TerminalIcon, Search, ExternalLink, Plus, X, ArrowRight, AlertTriangle } from 'lucide-react';
+import { Search, ExternalLink, Plus, X, AlertTriangle } from 'lucide-react';
 
 interface HistoryItem {
   cmd: string;
@@ -16,7 +16,7 @@ export const HeroTerminal: React.FC = () => {
       cmd: 'terrat --version',
       output: (
         <div className="text-[#a9b1d6] font-mono text-xs">
-          terrat 0.1.5 (linux/amd64, pure-go/xgb, no-cgo)<br />
+          terrat 0.2.5 (linux/amd64, pure-go/xgb, no-cgo)<br />
           kernel: linux 6.10 &bull; x11 wire protocol
         </div>
       ),
@@ -48,7 +48,7 @@ export const HeroTerminal: React.FC = () => {
     } else if (lower.includes('version') || lower === 'terrat -v') {
       out = (
         <div className="text-[#a9b1d6] font-mono text-xs">
-          terrat 0.1.5 (linux/amd64, pure-go/xgb, no-cgo)<br />
+          terrat 0.2.5 (linux/amd64, pure-go/xgb, no-cgo)<br />
           kernel: linux 6.10 &bull; x11 wire protocol
         </div>
       );
