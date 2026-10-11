@@ -2,11 +2,11 @@ package app
 
 import (
 	"fmt"
-	"os/exec"
+	"net/url"
 	"regexp"
-	"runtime"
 
 	"terrat/internal/config"
+	"terrat/internal/platform"
 	"terrat/internal/render"
 	"terrat/internal/terminal"
 )
@@ -14,14 +14,11 @@ import (
 var urlRegex = regexp.MustCompile(`https?://[^\s<>"'()]+`)
 
 func openURL(urlStr string) {
-	switch runtime.GOOS {
-	case "windows":
-		_ = exec.Command("rundll32", "url.dll,FileProtocolHandler", urlStr).Start()
-	case "darwin":
-		_ = exec.Command("open", urlStr).Start()
-	default:
-		_ = exec.Command("xdg-open", urlStr).Start()
+	parsed, err := url.ParseRequestURI(urlStr)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return
 	}
+	_ = platform.OpenURL(parsed.String())
 }
 
 func drainChannel(ch chan struct{}) {
@@ -49,6 +46,9 @@ func findSearchMatches(term *terminal.Terminal, query string) []render.SearchMat
 				StartCol: m.StartCol,
 				EndCol:   m.EndCol,
 			})
+			if len(matches) >= 1000 {
+				return matches
+			}
 		}
 	}
 	return matches

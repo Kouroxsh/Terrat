@@ -152,7 +152,7 @@ func (t *Terminal) GetCell(x, y int) Cell {
 }
 
 func (t *Terminal) GetCellLocked(x, y int) Cell {
-	if y < 0 || y >= t.rows || x < 0 || x >= t.cols {
+	if x < 0 || x >= t.cols || y >= t.rows {
 		return EmptyCell()
 	}
 
@@ -608,9 +608,7 @@ func (t *Terminal) processRune(r rune) {
 		case 'M':
 			t.reverseIndex()
 			t.state = stateNormal
-		case '=':
-			t.state = stateNormal
-		case '>':
+		case '=', '>':
 			t.state = stateNormal
 		default:
 			t.state = stateNormal
@@ -620,6 +618,14 @@ func (t *Terminal) processRune(r rune) {
 		t.state = stateNormal
 
 	case stateCSI:
+		if r == '\x1b' {
+			t.state = stateEscape
+			return
+		}
+		if r == '\x18' || r == '\x1a' {
+			t.state = stateNormal
+			return
+		}
 		if r == '?' || r == '>' || r == '=' {
 			t.csiLeader = r
 			if r == '?' {
@@ -637,9 +643,13 @@ func (t *Terminal) processRune(r rune) {
 			} else {
 				last := len(t.csiParams) - 1
 				if r == ';' {
-					t.csiParams = append(t.csiParams, "")
+					if len(t.csiParams) < 32 {
+						t.csiParams = append(t.csiParams, "")
+					}
 				} else {
-					t.csiParams[last] += string(r)
+					if len(t.csiParams[last]) < 16 {
+						t.csiParams[last] += string(r)
+					}
 				}
 			}
 			return
@@ -649,6 +659,10 @@ func (t *Terminal) processRune(r rune) {
 		t.state = stateNormal
 
 	case stateOSC:
+		if r == '\x18' || r == '\x1a' {
+			t.state = stateNormal
+			return
+		}
 		switch r {
 		case '\a':
 			t.executeOSC()
@@ -658,6 +672,8 @@ func (t *Terminal) processRune(r rune) {
 		default:
 			if len(t.oscBuffer) < 4096 {
 				t.oscBuffer = append(t.oscBuffer, r)
+			} else {
+				t.state = stateNormal
 			}
 		}
 
@@ -722,6 +738,11 @@ func (t *Terminal) scrollUp(count int) {
 			if len(t.scrollback) > t.maxHistory {
 				t.scrollback[0] = nil
 				t.scrollback = t.scrollback[1:]
+				if cap(t.scrollback) > t.maxHistory*2 && len(t.scrollback) == t.maxHistory {
+					compacted := make([][]Cell, t.maxHistory)
+					copy(compacted, t.scrollback)
+					t.scrollback = compacted
+				}
 			} else if t.scrollOff > 0 {
 				t.scrollOff++
 			}
@@ -808,6 +829,9 @@ func (t *Terminal) executeCSI(cmd rune) {
 	switch cmd {
 	case 'A':
 		n := arg(0, 1)
+		if n > t.rows {
+			n = t.rows
+		}
 		t.cursorY -= n
 		if t.cursorY < 0 {
 			t.cursorY = 0
@@ -815,6 +839,9 @@ func (t *Terminal) executeCSI(cmd rune) {
 
 	case 'B':
 		n := arg(0, 1)
+		if n > t.rows {
+			n = t.rows
+		}
 		t.cursorY += n
 		if t.cursorY >= t.rows {
 			t.cursorY = t.rows - 1
@@ -822,6 +849,9 @@ func (t *Terminal) executeCSI(cmd rune) {
 
 	case 'C':
 		n := arg(0, 1)
+		if n > t.cols {
+			n = t.cols
+		}
 		t.cursorX += n
 		if t.cursorX >= t.cols {
 			t.cursorX = t.cols - 1
@@ -829,6 +859,9 @@ func (t *Terminal) executeCSI(cmd rune) {
 
 	case 'D':
 		n := arg(0, 1)
+		if n > t.cols {
+			n = t.cols
+		}
 		t.cursorX -= n
 		if t.cursorX < 0 {
 			t.cursorX = 0
@@ -836,6 +869,9 @@ func (t *Terminal) executeCSI(cmd rune) {
 
 	case 'E':
 		n := arg(0, 1)
+		if n > t.rows {
+			n = t.rows
+		}
 		t.cursorY += n
 		if t.cursorY >= t.rows {
 			t.cursorY = t.rows - 1
@@ -844,6 +880,9 @@ func (t *Terminal) executeCSI(cmd rune) {
 
 	case 'F':
 		n := arg(0, 1)
+		if n > t.rows {
+			n = t.rows
+		}
 		t.cursorY -= n
 		if t.cursorY < 0 {
 			t.cursorY = 0
@@ -939,10 +978,16 @@ func (t *Terminal) executeCSI(cmd rune) {
 
 	case 'S':
 		n := arg(0, 1)
+		if n > t.rows {
+			n = t.rows
+		}
 		t.scrollUp(n)
 
 	case 'T':
 		n := arg(0, 1)
+		if n > t.rows {
+			n = t.rows
+		}
 		for i := 0; i < n; i++ {
 			for r := t.scrollBottom; r > t.scrollTop; r-- {
 				grid[r] = grid[r-1]
@@ -952,6 +997,9 @@ func (t *Terminal) executeCSI(cmd rune) {
 
 	case '@':
 		n := arg(0, 1)
+		if n > t.cols {
+			n = t.cols
+		}
 		row := grid[t.cursorY]
 		for c := t.cols - 1; c >= t.cursorX; c-- {
 			if c-n >= t.cursorX {
@@ -963,6 +1011,9 @@ func (t *Terminal) executeCSI(cmd rune) {
 
 	case 'X':
 		n := arg(0, 1)
+		if n > t.cols {
+			n = t.cols
+		}
 		row := grid[t.cursorY]
 		for c := t.cursorX; c < t.cursorX+n && c < t.cols; c++ {
 			row[c] = t.emptyCell()
@@ -977,6 +1028,9 @@ func (t *Terminal) executeCSI(cmd rune) {
 	case 'L':
 		if t.cursorY >= t.scrollTop && t.cursorY <= t.scrollBottom {
 			n := arg(0, 1)
+			if n > t.rows {
+				n = t.rows
+			}
 			for i := 0; i < n; i++ {
 				for r := t.scrollBottom; r > t.cursorY; r-- {
 					grid[r] = grid[r-1]
@@ -988,6 +1042,9 @@ func (t *Terminal) executeCSI(cmd rune) {
 	case 'M':
 		if t.cursorY >= t.scrollTop && t.cursorY <= t.scrollBottom {
 			n := arg(0, 1)
+			if n > t.rows {
+				n = t.rows
+			}
 			for i := 0; i < n; i++ {
 				for r := t.cursorY; r < t.scrollBottom; r++ {
 					grid[r] = grid[r+1]
@@ -998,6 +1055,9 @@ func (t *Terminal) executeCSI(cmd rune) {
 
 	case 'P':
 		n := arg(0, 1)
+		if n > t.cols {
+			n = t.cols
+		}
 		row := grid[t.cursorY]
 		for c := t.cursorX; c < t.cols; c++ {
 			if c+n < t.cols {
@@ -1027,7 +1087,19 @@ func (t *Terminal) executeCSI(cmd rune) {
 		mode := arg(0, 0)
 		switch mode {
 		case 6:
-			resp := fmt.Sprintf("\x1b[%d;%dR", t.cursorY+1, t.cursorX+1)
+			cy := t.cursorY + 1
+			if cy < 1 {
+				cy = 1
+			} else if cy > t.rows {
+				cy = t.rows
+			}
+			cx := t.cursorX + 1
+			if cx < 1 {
+				cx = 1
+			} else if cx > t.cols {
+				cx = t.cols
+			}
+			resp := fmt.Sprintf("\x1b[%d;%dR", cy, cx)
 			select {
 			case t.ResponseChan <- []byte(resp):
 			default:
@@ -1178,9 +1250,19 @@ func (t *Terminal) executeOSC() {
 		cmd := parts[0]
 		val := parts[1]
 		if cmd == "0" || cmd == "2" {
-			t.title = val
+			var sb strings.Builder
+			for _, r := range val {
+				if r >= 32 && r != 127 && r != '\x1b' {
+					sb.WriteRune(r)
+				}
+			}
+			sanitized := sb.String()
+			if len(sanitized) > 256 {
+				sanitized = sanitized[:256]
+			}
+			t.title = sanitized
 			select {
-			case t.TitleChan <- val:
+			case t.TitleChan <- sanitized:
 			default:
 			}
 		}

@@ -96,6 +96,10 @@ func (kh *KeyHandler) LookupAction(vk uint32, state uint16) ActionType {
 	// Ctrl-only shortcuts
 	if isCtrl && !isShift && !isAlt {
 		switch vk {
+		case VK_OEM_PLUS, '=':
+			return ActionZoomIn
+		case VK_OEM_MINUS, '-':
+			return ActionZoomOut
 		case VK_OEM_COMMA, ',':
 			return ActionPreferences
 		case VK_TAB:

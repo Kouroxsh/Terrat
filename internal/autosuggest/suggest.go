@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 )
@@ -87,6 +88,11 @@ func (e *Engine) loadShellHistory() {
 		filepath.Join(home, ".bash_history"),
 		filepath.Join(home, ".zsh_history"),
 	}
+	if appData := os.Getenv("APPDATA"); appData != "" {
+		historyFiles = append(historyFiles, filepath.Join(appData, "Microsoft", "Windows", "PowerShell", "PSReadLine", "ConsoleHost_history.txt"))
+	} else {
+		historyFiles = append(historyFiles, filepath.Join(home, "AppData", "Roaming", "Microsoft", "Windows", "PowerShell", "PSReadLine", "ConsoleHost_history.txt"))
+	}
 
 	for _, hf := range historyFiles {
 		file, err := os.Open(hf)
@@ -111,6 +117,7 @@ func (e *Engine) loadShellHistory() {
 				lines = append(lines, line)
 			}
 		}
+		_ = scanner.Err()
 		_ = file.Close()
 
 		// Read in reverse (most recent commands first)
@@ -216,8 +223,10 @@ func suggestPath(input string, cwd string) string {
 			continue
 		}
 		if b == '\\' && !inSingle {
-			escaped = true
-			continue
+			if i+1 < len(input) && (input[i+1] == ' ' || input[i+1] == '\t' || input[i+1] == '"' || input[i+1] == '\'') {
+				escaped = true
+				continue
+			}
 		}
 		if b == '"' && !inSingle {
 			inDouble = !inDouble
@@ -246,13 +255,10 @@ func suggestPath(input string, cwd string) string {
 	cleanToken := rawToken
 
 	if len(rawToken) > 0 {
-		if rawToken[0] == '"' {
+		switch rawToken[0] {
+		case '"', '\'':
 			isQuoted = true
-			quoteChar = '"'
-			cleanToken = rawToken[1:]
-		} else if rawToken[0] == '\'' {
-			isQuoted = true
-			quoteChar = '\''
+			quoteChar = rawToken[0]
 			cleanToken = rawToken[1:]
 		}
 	}
@@ -260,7 +266,7 @@ func suggestPath(input string, cwd string) string {
 	// Unescape if unquoted (e.g. "my\ " -> "my ")
 	var unescapedToken strings.Builder
 	for i := 0; i < len(cleanToken); i++ {
-		if cleanToken[i] == '\\' && !isQuoted && i+1 < len(cleanToken) {
+		if cleanToken[i] == '\\' && !isQuoted && i+1 < len(cleanToken) && (cleanToken[i+1] == ' ' || cleanToken[i+1] == '\t' || cleanToken[i+1] == '"' || cleanToken[i+1] == '\'') {
 			i++
 			unescapedToken.WriteByte(cleanToken[i])
 		} else {
@@ -269,31 +275,33 @@ func suggestPath(input string, cwd string) string {
 	}
 	pathToSearch := unescapedToken.String()
 
-	// Split directory and base
-	dirPart := filepath.Dir(pathToSearch)
-	basePart := filepath.Base(pathToSearch)
+	// Split directory and base (handling both / and \)
+	normPath := strings.ReplaceAll(pathToSearch, "\\", "/")
+	dirPart := filepath.Dir(normPath)
+	basePart := filepath.Base(normPath)
 
 	searchDir := cwd
-	if filepath.IsAbs(pathToSearch) {
+	if filepath.IsAbs(pathToSearch) || strings.HasPrefix(normPath, "/") {
 		if dirPart == "/" {
 			searchDir = "/"
 		} else {
-			searchDir = dirPart
+			searchDir = filepath.FromSlash(dirPart)
 		}
-	} else if strings.HasPrefix(pathToSearch, "~") {
-		home, _ := os.UserHomeDir()
-		if len(pathToSearch) == 1 {
+	} else if pathToSearch == "~" {
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
 			searchDir = home
 			basePart = ""
-		} else {
-			rem := pathToSearch[2:]
+		}
+	} else if (strings.HasPrefix(pathToSearch, "~/") || strings.HasPrefix(pathToSearch, "~\\")) && len(pathToSearch) > 2 {
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			rem := strings.ReplaceAll(pathToSearch[2:], "\\", "/")
 			d := filepath.Dir(rem)
 			b := filepath.Base(rem)
-			searchDir = filepath.Join(home, d)
+			searchDir = filepath.Join(home, filepath.FromSlash(d))
 			basePart = b
 		}
-	} else if strings.Contains(pathToSearch, "/") {
-		searchDir = filepath.Join(cwd, dirPart)
+	} else if strings.Contains(pathToSearch, "/") || strings.Contains(pathToSearch, "\\") {
+		searchDir = filepath.Join(cwd, filepath.FromSlash(dirPart))
 	} else {
 		searchDir = cwd
 		basePart = pathToSearch
@@ -314,8 +322,12 @@ func suggestPath(input string, cwd string) string {
 
 		if len(basePart) > 0 && strings.HasPrefix(strings.ToLower(name), lowerBase) && len(name) >= len(basePart) {
 			suffix := name[len(basePart):]
+			dirSep := "/"
+			if strings.Contains(pathToSearch, "\\") {
+				dirSep = "\\"
+			}
 			if entry.IsDir() {
-				suffix += "/"
+				suffix += dirSep
 			}
 
 			if isQuoted {
@@ -325,9 +337,11 @@ func suggestPath(input string, cwd string) string {
 				return suffix + string(quoteChar)
 			}
 
-			// In unquoted mode, spaces in suffix must be escaped
-			escapedSuffix := strings.ReplaceAll(suffix, " ", "\\ ")
-			return escapedSuffix
+			// In unquoted mode on Unix, spaces in suffix must be escaped
+			if runtime.GOOS != "windows" {
+				suffix = strings.ReplaceAll(suffix, " ", "\\ ")
+			}
+			return suffix
 		}
 	}
 
@@ -347,11 +361,17 @@ func suggestPath(input string, cwd string) string {
 				name := entry.Name()
 				if strings.HasPrefix(strings.ToLower(name), targetPrefix) {
 					suffix := name[len(targetPrefix):]
-					if entry.IsDir() {
-						suffix += "/"
+					dirSep := "/"
+					if strings.Contains(input, "\\") {
+						dirSep = "\\"
 					}
-					escapedSuffix := strings.ReplaceAll(suffix, " ", "\\ ")
-					return escapedSuffix
+					if entry.IsDir() {
+						suffix += dirSep
+					}
+					if runtime.GOOS != "windows" {
+						suffix = strings.ReplaceAll(suffix, " ", "\\ ")
+					}
+					return suffix
 				}
 			}
 		}

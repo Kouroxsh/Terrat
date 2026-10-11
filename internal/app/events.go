@@ -321,16 +321,18 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 		isCtrl := (e.State & platform.ModCtrl) != 0
 
 		if isCtrl {
-			if e.Detail == 4 {
+			switch e.Detail {
+			case 4:
 				a.applyZoom(platform.ActionZoomIn)
 				return false
-			} else if e.Detail == 5 {
+			case 5:
 				a.applyZoom(platform.ActionZoomOut)
 				return false
 			}
 		}
 
-		if e.Detail == 1 {
+		switch e.Detail {
+		case 1:
 			if isCtrl && a.hoveredURL != nil {
 				openURL(a.hoveredURL.URL)
 				return false
@@ -494,7 +496,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 				}
 			}
 			a.triggerRedraw()
-		} else if e.Detail == 2 {
+		case 2:
 			if int(e.EventY) < render.HeaderHeight {
 				for idx, thb := range a.canvas.TabHitBoxes {
 					if int(e.EventX) >= thb.StartX && int(e.EventX) <= thb.EndX {
@@ -510,7 +512,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 				}
 			}
 			a.win.PastePrimary()
-		} else if e.Detail == 3 {
+		case 3:
 			if activeTerm.MouseTrackingLocked() && (e.State&platform.ModShift) == 0 {
 				if a.sendMouseEvent(2, true, int(e.EventX), int(e.EventY), e.State) {
 					return false
@@ -527,7 +529,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 			} else {
 				a.win.Paste()
 			}
-		} else if e.Detail == 4 {
+		case 4:
 			if a.isPrefOpen {
 				items := getSettingsItems(a.config, a.isSearchOpen)
 				if a.prefIndex > 0 {
@@ -553,7 +555,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 				activeTerm.Scroll(3)
 				a.triggerRedraw()
 			}
-		} else if e.Detail == 5 {
+		case 5:
 			if a.isPrefOpen {
 				items := getSettingsItems(a.config, a.isSearchOpen)
 				if a.prefIndex < len(items)-1 {
@@ -772,35 +774,39 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 			return false
 		}
 
-		if action == platform.ActionNewTab {
+		switch action {
+		case platform.ActionNewTab:
 			newTab, err := a.createTab(a.canvas.Cols(), a.canvas.Rows(), a.currentWidth, a.currentHeight)
 			if err == nil {
 				a.tabs = append(a.tabs, newTab)
 				a.switchTab(len(a.tabs) - 1)
 			}
 			return false
-		} else if action == platform.ActionCloseTab {
+		case platform.ActionCloseTab:
 			a.closeTab(a.activeTabIdx)
 			return false
-		} else if action == platform.ActionNextTab {
+		case platform.ActionNextTab:
 			if len(a.tabs) > 1 {
 				a.switchTab((a.activeTabIdx + 1) % len(a.tabs))
 			}
 			return false
-		} else if action == platform.ActionPrevTab {
+		case platform.ActionPrevTab:
 			if len(a.tabs) > 1 {
 				a.switchTab((a.activeTabIdx - 1 + len(a.tabs)) % len(a.tabs))
 			}
 			return false
-		} else if action >= platform.ActionSwitchTab1 && action <= platform.ActionSwitchTab9 {
-			tIdx := int(action - platform.ActionSwitchTab1)
-			if tIdx < len(a.tabs) {
-				a.switchTab(tIdx)
+		default:
+			if action >= platform.ActionSwitchTab1 && action <= platform.ActionSwitchTab9 {
+				tIdx := int(action - platform.ActionSwitchTab1)
+				if tIdx < len(a.tabs) {
+					a.switchTab(tIdx)
+				}
+				return false
 			}
-			return false
 		}
 
-		if action == platform.ActionCopy {
+		switch action {
+		case platform.ActionCopy:
 			if activeTerm.HasSelection() {
 				text := activeTerm.GetSelectedText()
 				if text != "" {
@@ -810,36 +816,37 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 				activeTerm.ClearSelection()
 				a.triggerRedraw()
 			}
-		} else if action == platform.ActionPaste {
+		case platform.ActionPaste:
 			a.win.Paste()
-		} else if action == platform.ActionSelectAll {
+		case platform.ActionSelectAll:
 			activeTerm.SelectAll()
 			if txt := activeTerm.GetSelectedText(); txt != "" {
 				a.win.SetPrimary(txt)
 			}
 			a.triggerRedraw()
 			return false
-		} else if action == platform.ActionScrollUp {
+		case platform.ActionScrollUp:
 			if activeTerm.IsAlt() {
 				_, _ = activePTY.Write([]byte("\x1b[5~"))
 			} else {
 				activeTerm.Scroll(a.canvas.Rows() / 2)
 				a.triggerRedraw()
 			}
-		} else if action == platform.ActionScrollDown {
+		case platform.ActionScrollDown:
 			if activeTerm.IsAlt() {
 				_, _ = activePTY.Write([]byte("\x1b[6~"))
 			} else {
 				activeTerm.Scroll(-a.canvas.Rows() / 2)
 				a.triggerRedraw()
 			}
-		} else if action == platform.ActionScrollTop {
+		case platform.ActionScrollTop:
 			activeTerm.ScrollToTop()
 			a.triggerRedraw()
-		} else if action == platform.ActionScrollBottom {
+		case platform.ActionScrollBottom:
 			activeTerm.ResetScroll()
 			a.triggerRedraw()
-		} else if len(data) > 0 {
+		default:
+			if len(data) > 0 {
 			if len(data) == 1 && data[0] == 0x03 && activeTerm.HasSelection() {
 				a.win.SetClipboard(activeTerm.GetSelectedText())
 				activeTerm.ClearSelection()
@@ -925,6 +932,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 				a.triggerRedraw()
 			}
 		}
+	}
 
 	case platform.PasteNotifyEvent:
 		if len(e.Text) > 0 {

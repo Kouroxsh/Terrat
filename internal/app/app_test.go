@@ -63,6 +63,17 @@ func TestFindSearchMatches(t *testing.T) {
 	}
 }
 
+func TestFindSearchMatchesCapped(t *testing.T) {
+	term := terminal.New(80, 50)
+	for i := 0; i < 50; i++ {
+		_, _ = term.Write([]byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n"))
+	}
+	matches := findSearchMatches(term, "a")
+	if len(matches) != 1000 {
+		t.Fatalf("expected matches capped at 1000, got %d", len(matches))
+	}
+}
+
 func TestSettingsItemsGeneration(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Theme = "tokyo-night"

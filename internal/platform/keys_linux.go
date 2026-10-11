@@ -70,10 +70,10 @@ func (kh *KeyHandler) detectNumLockMask(X *xgb.Conn) {
 			idx := int(kc-kh.minKeycode) * int(kh.keysymsPerKeycode)
 			for c := 0; c < int(kh.keysymsPerKeycode); c++ {
 				if idx+c < len(kh.keysyms) {
-					sym := kh.keysyms[idx+c]
-					if sym == 0xff7f { // XK_Num_Lock
+					switch kh.keysyms[idx+c] {
+					case 0xff7f: // XK_Num_Lock
 						kh.numLockMask = mask
-					} else if sym == 0xff7e || sym == 0xfe08 || sym == 0xfe09 || sym == 0xfe03 { // Mode_switch / ISO_Group_Shift
+					case 0xff7e, 0xfe08, 0xfe09, 0xfe03: // Mode_switch / ISO_Group_Shift
 						kh.modeSwitchMask = mask
 					}
 				}

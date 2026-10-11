@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -16,14 +17,19 @@ import (
 )
 
 type TerminalPTY struct {
-	hPC        windows.Handle
-	hProcess   windows.Handle
-	hThread    windows.Handle
-	processId  uint32
-	stdinPipe  *os.File
-	stdoutPipe *os.File
-	closeOnce  sync.Once
-	shellName  string
+	hPC          windows.Handle
+	hProcess     windows.Handle
+	hThread      windows.Handle
+	processId    uint32
+	stdinPipe    *os.File
+	stdoutPipe   *os.File
+	closeOnce    sync.Once
+	shellName    string
+	cachedCwd    string
+	lastCwdCheck time.Time
+	cachedFg     bool
+	lastFgCheck  time.Time
+	cacheMu      sync.Mutex
 }
 
 func Start(cols, rows, pixelWidth, pixelHeight uint16, customCmd ...string) (*TerminalPTY, error) {
@@ -32,6 +38,12 @@ func Start(cols, rows, pixelWidth, pixelHeight uint16, customCmd ...string) (*Te
 	}
 	if os.Getenv("COLORTERM") == "" {
 		_ = os.Setenv("COLORTERM", "truecolor")
+	}
+	if os.Getenv("LANG") == "" {
+		_ = os.Setenv("LANG", "C.UTF-8")
+	}
+	if os.Getenv("LC_ALL") == "" {
+		_ = os.Setenv("LC_ALL", "C.UTF-8")
 	}
 	_ = os.Setenv("TERRAT_TERMINAL", "1")
 
@@ -158,20 +170,25 @@ func (p *TerminalPTY) Write(b []byte) (int, error) {
 	clean := make([]byte, 0, len(b))
 	for i := 0; i < len(b); i++ {
 		c := b[i]
-		if c == '\x7f' {
+		switch c {
+		case '\x7f':
 			clean = append(clean, '\x08')
-		} else if c == '\r' {
+		case '\r':
 			clean = append(clean, '\r')
 			if i+1 < len(b) && b[i+1] == '\n' {
 				i++
 			}
-		} else if c == '\n' {
+		case '\n':
 			clean = append(clean, '\r')
-		} else {
+		default:
 			clean = append(clean, c)
 		}
 	}
-	return p.stdinPipe.Write(clean)
+	_, err := p.stdinPipe.Write(clean)
+	if err != nil {
+		return 0, err
+	}
+	return len(b), nil
 }
 
 func (p *TerminalPTY) Resize(cols, rows, pixelWidth, pixelHeight uint16) error {
@@ -191,8 +208,8 @@ func (p *TerminalPTY) Resize(cols, rows, pixelWidth, pixelHeight uint16) error {
 func (p *TerminalPTY) Close() error {
 	var closeErr error
 	p.closeOnce.Do(func() {
-		if p.hPC != 0 {
-			windows.ClosePseudoConsole(p.hPC)
+		if p.hProcess != 0 {
+			_ = windows.TerminateProcess(p.hProcess, 0)
 		}
 		if p.stdinPipe != nil {
 			_ = p.stdinPipe.Close()
@@ -200,8 +217,10 @@ func (p *TerminalPTY) Close() error {
 		if p.stdoutPipe != nil {
 			_ = p.stdoutPipe.Close()
 		}
+		if p.hPC != 0 {
+			windows.ClosePseudoConsole(p.hPC)
+		}
 		if p.hProcess != 0 {
-			_ = windows.TerminateProcess(p.hProcess, 0)
 			windows.CloseHandle(p.hProcess)
 		}
 		if p.hThread != 0 {
@@ -288,7 +307,7 @@ func getProcessCwd(pid uint32) string {
 		unsafe.Sizeof(uStr),
 		&bytesRead,
 	)
-	if err != nil || uStr.Length == 0 || uStr.Buffer == 0 {
+	if err != nil || uStr.Length == 0 || uStr.Length > 8192 || uStr.Buffer == 0 {
 		return ""
 	}
 
@@ -330,6 +349,14 @@ func (p *TerminalPTY) IsForegroundShell() bool {
 	if p == nil || p.processId == 0 {
 		return true
 	}
+	p.cacheMu.Lock()
+	if time.Since(p.lastFgCheck) < 500*time.Millisecond {
+		fg := p.cachedFg
+		p.cacheMu.Unlock()
+		return fg
+	}
+	p.cacheMu.Unlock()
+
 	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
 		return true
@@ -338,27 +365,51 @@ func (p *TerminalPTY) IsForegroundShell() bool {
 
 	var entry windows.ProcessEntry32
 	entry.Size = uint32(unsafe.Sizeof(entry))
+	isFg := true
 	err = windows.Process32First(snap, &entry)
 	for err == nil {
 		if entry.ParentProcessID == p.processId && entry.ProcessID != p.processId {
-			return false
+			isFg = false
+			break
 		}
 		err = windows.Process32Next(snap, &entry)
 	}
-	return true
+
+	p.cacheMu.Lock()
+	p.cachedFg = isFg
+	p.lastFgCheck = time.Now()
+	p.cacheMu.Unlock()
+
+	return isFg
 }
 
 func (p *TerminalPTY) GetCwd() string {
-	if p != nil && p.processId != 0 {
-		if cwd := getProcessCwd(p.processId); cwd != "" {
-			return cwd
+	if p == nil || p.processId == 0 {
+		wd, err := os.Getwd()
+		if err != nil {
+			return ""
 		}
+		return wd
 	}
-	wd, err := os.Getwd()
-	if err != nil {
-		return ""
+	p.cacheMu.Lock()
+	if time.Since(p.lastCwdCheck) < 500*time.Millisecond && p.cachedCwd != "" {
+		cwd := p.cachedCwd
+		p.cacheMu.Unlock()
+		return cwd
 	}
-	return wd
+	p.cacheMu.Unlock()
+
+	cwd := getProcessCwd(p.processId)
+	if cwd == "" {
+		cwd, _ = os.Getwd()
+	}
+
+	p.cacheMu.Lock()
+	p.cachedCwd = cwd
+	p.lastCwdCheck = time.Now()
+	p.cacheMu.Unlock()
+
+	return cwd
 }
 
 func (p *TerminalPTY) ShellName() string {

@@ -33,6 +33,7 @@ var (
 	procPostQuitMessage         = modUser32.NewProc("PostQuitMessage")
 	procPostMessageW            = modUser32.NewProc("PostMessageW")
 	procGetCursorPos            = modUser32.NewProc("GetCursorPos")
+	procScreenToClient          = modUser32.NewProc("ScreenToClient")
 	procLoadCursorW             = modUser32.NewProc("LoadCursorW")
 	procSetCursor               = modUser32.NewProc("SetCursor")
 	procGetDC                   = modUser32.NewProc("GetDC")
@@ -62,19 +63,31 @@ var (
 	procRtlMoveMemory           = modKernel.NewProc("RtlMoveMemory")
 	procLstrlenW                = modKernel.NewProc("lstrlenW")
 	procAttachConsole           = modKernel.NewProc("AttachConsole")
+	procSetProcessDpiAwarenessContext = modUser32.NewProc("SetProcessDpiAwarenessContext")
+	procSetProcessDPIAware            = modUser32.NewProc("SetProcessDPIAware")
 
 	procStretchDIBits           = modGdi32.NewProc("StretchDIBits")
+
+	modShell32                  = windows.NewLazySystemDLL("shell32.dll")
+	procShellExecuteW           = modShell32.NewProc("ShellExecuteW")
 )
 
 func init() {
+	const dpiAwarePerMonitorV2 = ^uintptr(3)
+	if procSetProcessDpiAwarenessContext.Find() == nil {
+		procSetProcessDpiAwarenessContext.Call(dpiAwarePerMonitorV2)
+	} else if procSetProcessDPIAware.Find() == nil {
+		procSetProcessDPIAware.Call()
+	}
+
 	const attachParentProcess = ^uintptr(0)
 	ret, _, _ := procAttachConsole.Call(attachParentProcess)
 	if ret != 0 {
 		if h, err := windows.GetStdHandle(windows.STD_OUTPUT_HANDLE); err == nil && h != 0 && h != windows.InvalidHandle {
-			os.Stdout = os.NewFile(uintptr(h), "/dev/stdout")
+			os.Stdout = os.NewFile(uintptr(h), "stdout")
 		}
 		if h, err := windows.GetStdHandle(windows.STD_ERROR_HANDLE); err == nil && h != 0 && h != windows.InvalidHandle {
-			os.Stderr = os.NewFile(uintptr(h), "/dev/stderr")
+			os.Stderr = os.NewFile(uintptr(h), "stderr")
 		}
 	}
 }
@@ -264,14 +277,14 @@ type windowCreateResult struct {
 	err error
 }
 
-func NewWindow(title string, width, height uint16, iconPath string, iconData []byte) (*Window, error) {
+func NewWindow(title string, width, height uint16, _ string, _ []byte) (*Window, error) {
 	resCh := make(chan windowCreateResult, 1)
-	go windowThread(title, width, height, iconPath, iconData, resCh)
+	go windowThread(title, width, height, resCh)
 	res := <-resCh
 	return res.w, res.err
 }
 
-func windowThread(title string, width, height uint16, iconPath string, iconData []byte, resCh chan<- windowCreateResult) {
+func windowThread(title string, width, height uint16, resCh chan<- windowCreateResult) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -415,91 +428,91 @@ func wndProc(hwnd windows.Handle, msg, wParam, lParam uintptr) uintptr {
 		x := int16(int32(lParam & 0xFFFF))
 		y := int16(int32((lParam >> 16) & 0xFFFF))
 		state := getModifiers()
-		w.eventCh <- MotionNotifyEvent{
+		w.sendEvent(MotionNotifyEvent{
 			EventX: x,
 			EventY: y,
 			RootX:  x,
 			RootY:  y,
 			State:  state,
-		}
+		})
 		return 0
 
 	case WM_LBUTTONDOWN:
 		x := int16(int32(lParam & 0xFFFF))
 		y := int16(int32((lParam >> 16) & 0xFFFF))
-		w.eventCh <- ButtonPressEvent{
+		w.sendEvent(ButtonPressEvent{
 			Detail: 1,
 			State:  getModifiers(),
 			EventX: x,
 			EventY: y,
 			RootX:  x,
 			RootY:  y,
-		}
+		})
 		return 0
 
 	case WM_LBUTTONUP:
 		x := int16(int32(lParam & 0xFFFF))
 		y := int16(int32((lParam >> 16) & 0xFFFF))
-		w.eventCh <- ButtonReleaseEvent{
+		w.sendEvent(ButtonReleaseEvent{
 			Detail: 1,
 			State:  getModifiers(),
 			EventX: x,
 			EventY: y,
 			RootX:  x,
 			RootY:  y,
-		}
+		})
 		return 0
 
 	case WM_MBUTTONDOWN:
 		x := int16(int32(lParam & 0xFFFF))
 		y := int16(int32((lParam >> 16) & 0xFFFF))
-		w.eventCh <- ButtonPressEvent{
+		w.sendEvent(ButtonPressEvent{
 			Detail: 2,
 			State:  getModifiers(),
 			EventX: x,
 			EventY: y,
 			RootX:  x,
 			RootY:  y,
-		}
+		})
 		return 0
 
 	case WM_MBUTTONUP:
 		x := int16(int32(lParam & 0xFFFF))
 		y := int16(int32((lParam >> 16) & 0xFFFF))
-		w.eventCh <- ButtonReleaseEvent{
+		w.sendEvent(ButtonReleaseEvent{
 			Detail: 2,
 			State:  getModifiers(),
 			EventX: x,
 			EventY: y,
 			RootX:  x,
 			RootY:  y,
-		}
+		})
 		return 0
 
 	case WM_RBUTTONDOWN:
 		x := int16(int32(lParam & 0xFFFF))
 		y := int16(int32((lParam >> 16) & 0xFFFF))
-		w.eventCh <- ButtonPressEvent{
+		w.sendEvent(ButtonPressEvent{
 			Detail: 3,
 			State:  getModifiers(),
 			EventX: x,
 			EventY: y,
 			RootX:  x,
 			RootY:  y,
-		}
+		})
 		return 0
 
 	case WM_RBUTTONUP:
 		x := int16(int32(lParam & 0xFFFF))
 		y := int16(int32((lParam >> 16) & 0xFFFF))
-		w.eventCh <- ButtonReleaseEvent{
+		w.sendEvent(ButtonReleaseEvent{
 			Detail: 3,
 			State:  getModifiers(),
 			EventX: x,
 			EventY: y,
 			RootX:  x,
 			RootY:  y,
-		}
+		})
 		return 0
 
 	case WM_MOUSEWHEEL:
@@ -508,16 +521,18 @@ func wndProc(hwnd windows.Handle, msg, wParam, lParam uintptr) uintptr {
 		if delta < 0 {
 			detail = 5 // Wheel Down
 		}
-		x := int16(int32(lParam & 0xFFFF))
-		y := int16(int32((lParam >> 16) & 0xFFFF))
-		w.eventCh <- ButtonPressEvent{
+		screenX := int32(int16(lParam & 0xFFFF))
+		screenY := int32(int16((lParam >> 16) & 0xFFFF))
+		pt := POINT{X: screenX, Y: screenY}
+		procScreenToClient.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&pt)))
+		w.sendEvent(ButtonPressEvent{
 			Detail: detail,
 			State:  getModifiers(),
-			EventX: x,
-			EventY: y,
-			RootX:  x,
-			RootY:  y,
-		}
+			EventX: int16(pt.X),
+			EventY: int16(pt.Y),
+			RootX:  int16(screenX),
+			RootY:  int16(screenY),
+		})
 		return 0
 
 	case WM_KEYDOWN, WM_SYSKEYDOWN:
@@ -568,23 +583,23 @@ func wndProc(hwnd windows.Handle, msg, wParam, lParam uintptr) uintptr {
 		}
 
 		if action != ActionNone {
-			w.eventCh <- KeyPressEvent{
+			w.sendEvent(KeyPressEvent{
 				Detail: byte(vk),
 				State:  state,
 				KeySym: ksym,
 				Action: action,
-			}
+			})
 			return 0
 		}
 
 		if bytes, ok := w.keyHandler.LookupSpecialKey(vk, state); ok {
-			w.eventCh <- KeyPressEvent{
+			w.sendEvent(KeyPressEvent{
 				Detail: byte(vk),
 				State:  state,
 				KeySym: ksym,
 				Bytes:  bytes,
 				Action: ActionNone,
-			}
+			})
 			return 0
 		}
 
@@ -592,13 +607,13 @@ func wndProc(hwnd windows.Handle, msg, wParam, lParam uintptr) uintptr {
 		r := rune(wParam)
 		if r >= 32 && r != 127 { // Printable character
 			state := getModifiers()
-			w.eventCh <- KeyPressEvent{
+			w.sendEvent(KeyPressEvent{
 				Detail: 0,
 				State:  state,
 				KeySym: uint32(r),
 				Bytes:  CharToBytes(r),
 				Action: ActionNone,
-			}
+			})
 			return 0
 		}
 
@@ -613,10 +628,10 @@ func wndProc(hwnd windows.Handle, msg, wParam, lParam uintptr) uintptr {
 		}
 		w.Width = width
 		w.Height = height
-		w.eventCh <- ConfigureNotifyEvent{
+		w.sendEvent(ConfigureNotifyEvent{
 			Width:  width,
 			Height: height,
-		}
+		})
 		return 0
 
 	case WM_PAINT:
@@ -628,15 +643,15 @@ func wndProc(hwnd windows.Handle, msg, wParam, lParam uintptr) uintptr {
 		}
 		w.mu.Unlock()
 		procEndPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&ps)))
-		w.eventCh <- ExposeEvent{}
+		w.sendEvent(ExposeEvent{})
 		return 0
 
 	case WM_KILLFOCUS:
-		w.eventCh <- FocusOutEvent{}
+		w.sendEvent(FocusOutEvent{})
 		return 0
 
 	case WM_CLOSE:
-		w.eventCh <- CloseRequestEvent{}
+		w.sendEvent(CloseRequestEvent{})
 		return 0
 
 	case WM_DESTROY:
@@ -676,6 +691,13 @@ func (w *Window) drawDIB(hdc windows.Handle, pixels []byte, width, height int) {
 
 func (w *Window) Events() <-chan Event {
 	return w.eventCh
+}
+
+func (w *Window) sendEvent(ev Event) {
+	select {
+	case w.eventCh <- ev:
+	default:
+	}
 }
 
 func (w *Window) Blit(pixels []byte, width, height uint16) {
@@ -733,7 +755,7 @@ func (w *Window) StartDrag(rootX, rootY int16) {
 	var pt POINT
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
 	lParam := uintptr(uint32(uint16(pt.X)) | (uint32(uint16(pt.Y)) << 16))
-	procSendMessageW.Call(uintptr(w.hwnd), WM_NCLBUTTONDOWN, HTCAPTION, lParam)
+	procPostMessageW.Call(uintptr(w.hwnd), WM_NCLBUTTONDOWN, HTCAPTION, lParam)
 }
 
 func (w *Window) StartResize(direction int, rootX, rootY int16) {
@@ -762,7 +784,7 @@ func (w *Window) StartResize(direction int, rootX, rootY int16) {
 	var pt POINT
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
 	lParam := uintptr(uint32(uint16(pt.X)) | (uint32(uint16(pt.Y)) << 16))
-	procSendMessageW.Call(uintptr(w.hwnd), WM_NCLBUTTONDOWN, ht, lParam)
+	procPostMessageW.Call(uintptr(w.hwnd), WM_NCLBUTTONDOWN, ht, lParam)
 }
 
 func (w *Window) Minimize() {
@@ -865,7 +887,10 @@ func (w *Window) Paste() {
 
 	text := string(utf16.Decode(buf))
 	if text != "" {
-		w.eventCh <- PasteNotifyEvent{Text: text}
+		select {
+		case w.eventCh <- PasteNotifyEvent{Text: text}:
+		default:
+		}
 	}
 }
 
@@ -875,4 +900,24 @@ func (w *Window) PastePrimary() {
 
 func (w *Window) Close() {
 	procPostMessageW.Call(uintptr(w.hwnd), WM_CLOSE, 0, 0)
+}
+
+func OpenURL(urlStr string) error {
+	urlPtr, err := windows.UTF16PtrFromString(urlStr)
+	if err != nil {
+		return err
+	}
+	opPtr, _ := windows.UTF16PtrFromString("open")
+	ret, _, _ := procShellExecuteW.Call(
+		0,
+		uintptr(unsafe.Pointer(opPtr)),
+		uintptr(unsafe.Pointer(urlPtr)),
+		0,
+		0,
+		1,
+	)
+	if ret <= 32 {
+		return fmt.Errorf("ShellExecuteW failed with code %d", ret)
+	}
+	return nil
 }

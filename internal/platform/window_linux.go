@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+	"os/exec"
 	"sync"
 
 	"github.com/jezek/xgb"
@@ -572,9 +573,10 @@ func (w *Window) HandleSelectionRequest(e xproto.SelectionRequestEvent) {
 	var text string
 
 	w.clipMu.RLock()
-	if e.Selection == xproto.AtomPrimary {
+	switch e.Selection {
+	case xproto.AtomPrimary:
 		text = w.primaryText
-	} else if e.Selection == w.AtomClipboard {
+	case w.AtomClipboard:
 		text = w.clipboardText
 	}
 	w.clipMu.RUnlock()
@@ -796,4 +798,9 @@ func (w *Window) eventLoop() {
 			}
 		}
 	}
+}
+
+func OpenURL(urlStr string) error {
+	cmd := exec.Command("xdg-open", urlStr)
+	return cmd.Start()
 }

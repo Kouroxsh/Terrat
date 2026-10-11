@@ -492,6 +492,11 @@ func (a *App) Run() error {
 			pendingEvent = nil
 			ok = true
 		} else {
+			var autoScrollCh <-chan time.Time
+			if a.isSelecting && a.dragScrollDelta != 0 {
+				autoScrollCh = autoScrollTicker.C
+			}
+
 			select {
 			case <-a.ctx.Done():
 				return nil
@@ -506,20 +511,37 @@ func (a *App) Run() error {
 				continue
 
 			case tabID := <-a.ptyDataNotifyCh:
-				if a.activeTabIdx < len(a.tabs) && a.tabs[a.activeTabIdx].ID == tabID {
-					if a.isSearchOpen {
-						a.updateSearchMatches()
-					}
-					a.triggerRedraw()
-				} else {
+				activeUpdated := a.activeTabIdx < len(a.tabs) && a.tabs[a.activeTabIdx].ID == tabID
+				if !activeUpdated {
 					for i := range a.tabs {
 						if a.tabs[i].ID == tabID {
 							a.tabs[i].HasBell = true
-							a.triggerRedraw()
 							break
 						}
 					}
 				}
+				draining := true
+				for draining {
+					select {
+					case nextID := <-a.ptyDataNotifyCh:
+						if a.activeTabIdx < len(a.tabs) && a.tabs[a.activeTabIdx].ID == nextID {
+							activeUpdated = true
+						} else {
+							for i := range a.tabs {
+								if a.tabs[i].ID == nextID {
+									a.tabs[i].HasBell = true
+									break
+								}
+							}
+						}
+					default:
+						draining = false
+					}
+				}
+				if activeUpdated && a.isSearchOpen {
+					a.updateSearchMatches()
+				}
+				a.triggerRedraw()
 				continue
 
 			case tm := <-a.tabTitleNotifyCh:
@@ -546,7 +568,7 @@ func (a *App) Run() error {
 				a.renderScreen(cursorBlink)
 				continue
 
-			case <-autoScrollTicker.C:
+			case <-autoScrollCh:
 				if a.isSelecting && a.dragScrollDelta != 0 && a.activeTabIdx < len(a.tabs) {
 					activeTerm := a.tabs[a.activeTabIdx].Term
 					activeTerm.ScrollKeepSelection(a.dragScrollDelta)

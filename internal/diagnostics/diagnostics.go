@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 )
@@ -318,7 +319,7 @@ func Analyze(rawInput string) *Diagnostic {
 
 	baseCmd := cmdParts[0]
 
-	if !hasSudo && os.Geteuid() != 0 {
+	if runtime.GOOS != "windows" && !hasSudo && os.Geteuid() != 0 {
 		if fix, ok := privilegedCommands[baseCmd]; ok {
 			if !isSafeOperation(baseCmd, cmdParts) {
 				fixedLine := fix + strings.TrimPrefix(activeSeg, baseCmd)
@@ -399,7 +400,7 @@ func Analyze(rawInput string) *Diagnostic {
 		return nil
 	}
 
-	if strings.Contains(baseCmd, "/") || strings.HasPrefix(baseCmd, ".") || strings.HasPrefix(baseCmd, "~") {
+	if strings.Contains(baseCmd, "/") || strings.Contains(baseCmd, "\\") || strings.Contains(baseCmd, ":") || strings.HasPrefix(baseCmd, ".") || strings.HasPrefix(baseCmd, "~") {
 		return nil
 	}
 

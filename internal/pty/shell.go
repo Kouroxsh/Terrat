@@ -148,15 +148,16 @@ func parseCommandLine(cmdStr string, stat func(string) (os.FileInfo, error)) []s
 				cur.WriteByte(ch)
 			}
 		} else {
-			if ch == '"' || ch == '\'' {
+			switch ch {
+			case '"', '\'':
 				inQuotes = true
 				quoteChar = ch
-			} else if ch == ' ' || ch == '\t' {
+			case ' ', '\t':
 				if cur.Len() > 0 {
 					parts = append(parts, cur.String())
 					cur.Reset()
 				}
-			} else {
+			default:
 				cur.WriteByte(ch)
 			}
 		}

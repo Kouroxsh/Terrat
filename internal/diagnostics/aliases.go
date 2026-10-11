@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -106,6 +107,7 @@ func loadAliasesFromFiles() {
 		for scanner.Scan() {
 			parseAliasLine(scanner.Text())
 		}
+		_ = scanner.Err()
 		_ = f.Close()
 	}
 }
@@ -131,6 +133,7 @@ func loadGitAliases() {
 					}
 				}
 			}
+			_ = scanner.Err()
 			_ = f.Close()
 		}
 	}
@@ -152,11 +155,15 @@ func loadGitAliases() {
 					}
 				}
 			}
+			_ = scanner.Err()
 		}
 	}()
 }
 
 func probeShellAliases() {
+	if runtime.GOOS == "windows" && os.Getenv("SHELL") == "" {
+		return
+	}
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/bash"
@@ -182,4 +189,5 @@ func probeShellAliases() {
 	for scanner.Scan() {
 		parseAliasLine(scanner.Text())
 	}
+	_ = scanner.Err()
 }

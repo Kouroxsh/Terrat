@@ -34,7 +34,7 @@ type FontEngine struct {
 	fallbacks []fallbackFont
 
 	asciiCache [96][2]*GlyphMask
-	otherCache map[rune]*GlyphMask
+	otherCache map[uint64]*GlyphMask
 }
 
 var candidateTTFFonts = []string{
@@ -65,12 +65,20 @@ func init() {
 	if windir == "" {
 		windir = `C:\Windows`
 	}
-	candidateTTFFonts = append([]string{
+	var winFonts []string
+	if localApp := os.Getenv("LOCALAPPDATA"); localApp != "" {
+		winFonts = append(winFonts,
+			filepath.Join(localApp, "Microsoft", "Windows", "Fonts", "CascadiaMono.ttf"),
+			filepath.Join(localApp, "Microsoft", "Windows", "Fonts", "CascadiaCode.ttf"),
+		)
+	}
+	winFonts = append(winFonts,
 		filepath.Join(windir, "Fonts", "CascadiaMono.ttf"),
 		filepath.Join(windir, "Fonts", "CascadiaCode.ttf"),
 		filepath.Join(windir, "Fonts", "consola.ttf"),
 		filepath.Join(windir, "Fonts", "lucon.ttf"),
-	}, candidateTTFFonts...)
+	)
+	candidateTTFFonts = append(winFonts, candidateTTFFonts...)
 	candidateFallbackFonts = append([]string{
 		filepath.Join(windir, "Fonts", "segoeui.ttf"),
 		filepath.Join(windir, "Fonts", "seguiemj.ttf"),
@@ -81,7 +89,7 @@ func init() {
 
 func NewFontEngine(fontSize float64) (*FontEngine, error) {
 	fe := &FontEngine{
-		otherCache: make(map[rune]*GlyphMask),
+		otherCache: make(map[uint64]*GlyphMask),
 		fontSize:   fontSize,
 	}
 
@@ -243,7 +251,7 @@ func (fe *FontEngine) SetFontSize(size float64) error {
 	}
 
 	fe.loadFallbacks(size)
-	fe.otherCache = make(map[rune]*GlyphMask)
+	fe.otherCache = make(map[uint64]*GlyphMask)
 	fe.precacheASCII()
 	return nil
 }
@@ -286,12 +294,16 @@ func (fe *FontEngine) GetGlyph(r rune, bold bool) *GlyphMask {
 		}
 	}
 
-	if mask, ok := fe.otherCache[r]; ok {
+	key := (uint64(r) << 1) | uint64(boldIdx)
+	if mask, ok := fe.otherCache[key]; ok {
 		return mask
 	}
 
 	mask := fe.rasterizeRune(r, bold)
-	fe.otherCache[r] = mask
+	if len(fe.otherCache) >= 4096 {
+		fe.otherCache = make(map[uint64]*GlyphMask, 1024)
+	}
+	fe.otherCache[key] = mask
 	return mask
 }
 
