@@ -148,13 +148,13 @@ export const HeroTerminal: React.FC = () => {
               </span>
             </div>
             <h1 className="text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-white leading-[1.05] mb-6">
-              A lightweight Linux terminal, <br />
-              <span className="text-[#7aa2f7]">written in pure Go.</span>
+              Ultra-light terminal for Linux &amp; Windows, <br />
+              <span className="text-[#7aa2f7]">engineered in pure Go.</span>
             </h1>
             <p className="text-base sm:text-lg text-[#a9b1d6] max-w-2xl leading-relaxed">
-              No CGO bindings, no Electron, and no heavy GPU framework requirements.
-              Terrat talks directly to the X11 display server via native wire protocol over Unix domain sockets.
-              Cold boots in under 5ms, stays at ~11MB of memory, and includes multi-tabs, live font scaling, and buffer search out of the box.
+              Zero CGO dependencies, zero Electron bloat, and zero GPU runtime overhead.
+              Terrat interfaces directly with the X11 wire protocol on Linux and native ConPTY on Windows 10/11.
+              Cold boots in under 5ms, idles at ~11MB of RAM, and delivers fish-style autocomplete, live diagnostics, and isolated multi-tabs out of the box.
             </p>
           </div>
 

@@ -30,7 +30,7 @@ export const Benchmarks: React.FC = () => {
     {
       metric: 'Binary Size',
       desc: 'Standalone executable size (stripped)',
-      terrat: '3.7 MB (static)',
+      terrat: '~4.1 MB (static)',
       alacritty: '14.2 MB',
       kitty: '22.0 MB',
       konsole: 'Multi-MB (Qt/KDE)',

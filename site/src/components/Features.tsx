@@ -5,9 +5,9 @@ export const Features: React.FC = () => {
   const featureList = [
     {
       num: '01',
-      title: 'Inline Ghost Text',
-      subtitle: 'Fish-Like Command Autosuggestions',
-      desc: 'Real-time completion hints drawn dynamically in front of the cursor in subtle muted gray. Ingests shell history (~/.bash_history, ~/.zsh_history) and learns as you work. Press Right Arrow or Tab to accept.',
+      title: 'Inline Ghost Text & Paths',
+      subtitle: 'Fish-Like Cross-Platform Completion',
+      desc: 'Real-time completion hints drawn dynamically in front of the cursor. Ingests Linux histories (~/.bash_history, ~/.zsh_history) and Windows PowerShell PSReadLine (ConsoleHost_history.txt). Intelligently auto-completes file paths with / and \\, escapes, and quotes.',
       shortcut: 'Tab / Right Arrow',
       icon: Sparkles,
       color: '#7dcfff',
@@ -15,26 +15,26 @@ export const Features: React.FC = () => {
     {
       num: '02',
       title: 'Live Diagnostics & Linting',
-      subtitle: 'Typo Detection & QuickFix',
-      desc: 'Understands common typos (gti, dokcer, sl), unclosed quote strings, and missing privileges. Shows helpful guidance in the header and lets you auto-correct instantly with Alt+Enter.',
-      shortcut: 'Alt + Enter (QuickFix)',
+      subtitle: 'Lexer-Based Error Detection & QuickFix',
+      desc: 'Understands common typos (gti, dokcer, sl, git puch), unclosed quotes, chained operators (&&, ||, ;, |), and missing privileges. Shows guidance in the header and lets you auto-correct instantly with Alt+Enter.',
+      shortcut: 'Alt + Enter (QuickFix) / Ctrl+Shift+D',
       icon: AlertCircle,
       color: '#e0af68',
     },
     {
       num: '03',
-      title: 'Multi-Tabs (Isolated PTY)',
-      subtitle: 'POSIX Pseudo-Terminal Sessions',
-      desc: 'Each tab allocates an independent PTY master/slave pair (/dev/ptmx). Shell processes are fully isolated. Exiting a shell automatically closes its tab, and closing the final tab cleanly exits the application.',
+      title: 'Isolated Multi-Tabs',
+      subtitle: 'Zero-Leak Concurrency & PTY Sessions',
+      desc: 'Each tab allocates an independent pseudo-terminal session (/dev/ptmx on Linux, ConPTY on Windows) with dedicated I/O pumps bound to context.Context cancellation to eliminate goroutine leaks. Shell processes are fully isolated.',
       shortcut: 'Ctrl+Shift+T / Ctrl+Tab / Alt+1..9',
       icon: Layers,
       color: '#7aa2f7',
     },
     {
       num: '04',
-      title: 'Live Font Scaling',
-      subtitle: 'Dynamic Rasterization & SIGWINCH',
-      desc: 'Adjust font size dynamically without restarting. TrueType vector glyphs are rendered into memory alpha masks in sub-millisecond time. The window geometry reflows and transmits SIGWINCH to active processes.',
+      title: 'Live Font Scaling & Shaping',
+      subtitle: 'Dynamic Rasterization & Unicode Fallback',
+      desc: 'Adjust font size dynamically without restarting. TrueType glyphs are rendered into memory alpha masks in sub-millisecond time with automatic PTY reflow (SIGWINCH / ConPTY resize). Features comprehensive fallback with Persian/Arabic shaping.',
       shortcut: 'Ctrl+= / Ctrl+- / Ctrl+0 / Ctrl+Wheel',
       icon: ZoomIn,
       color: '#9ece6a',
@@ -51,27 +51,27 @@ export const Features: React.FC = () => {
     {
       num: '06',
       title: 'URL Detection & Launch',
-      subtitle: 'Async xdg-open Integration',
-      desc: 'Scans visible cells for web URLs and file paths. Holding Ctrl highlights the detected URL and changes the X11 mouse cursor to a pointer. Ctrl+Click opens the URL in your default browser asynchronously.',
+      subtitle: 'Async Browser Integration',
+      desc: 'Scans visible cells for web URLs and file paths. Holding Ctrl highlights the detected URL and changes the mouse cursor to a pointer. Ctrl+Click opens the URL asynchronously in your default browser across Linux & Windows.',
       shortcut: 'Ctrl + Hover / Ctrl + Left Click',
       icon: Link2,
       color: '#7aa2f7',
     },
     {
       num: '07',
-      title: 'Composited Window Opacity',
-      subtitle: 'EWMH _NET_WM_WINDOW_OPACITY',
-      desc: 'Communicates directly with your X11 window manager and compositor (Picom, Mutter, KWin). Transparency is handled by the compositor, keeping terminal rendering code fast and simple.',
-      shortcut: 'Configured in ~/.config/terrat/config.json',
+      title: 'Window Styling & Opacity',
+      subtitle: 'Hardware-Accelerated Compositing',
+      desc: 'Communicates directly with your window manager and compositor (Linux EWMH _NET_WM_WINDOW_OPACITY & Windows DWM). Tear-free double-buffering completely eliminates screen tearing and resizing artifacts.',
+      shortcut: 'Configured in config.json',
       icon: Eye,
       color: '#bb9af7',
     },
     {
       num: '08',
-      title: 'Dual Selection & Clipboard',
-      subtitle: 'PRIMARY & CLIPBOARD Sync',
-      desc: 'Click-drag character selection with double-click word/path selection and triple-click line selection. Automatically updates X11 PRIMARY for middle-click paste and CLIPBOARD for Ctrl+Shift+V.',
-      shortcut: 'Double-Click / Triple-Click / Middle-Click',
+      title: 'Hardened Clipboard & Safe Paste',
+      subtitle: 'Anti-Pastejacking & Bracketed Paste',
+      desc: 'Smart Ctrl+C/Ctrl+V behavior. DECSET 2004 bracketed paste mode prevents unintentional execution in REPLs. Anti-pastejacking sanitizer strips malicious escapes and terminal controls while preserving valid Unicode like Persian ZWNJ.',
+      shortcut: 'Smart Ctrl+C / Ctrl+V / Bracketed Paste',
       icon: MousePointer,
       color: '#f7768e',
     },
@@ -89,7 +89,7 @@ export const Features: React.FC = () => {
             Practical features for everyday terminal work.
           </h2>
           <p className="text-sm sm:text-base text-[#a9b1d6] max-w-2xl">
-            Built-in capabilities designed for Linux workstations without requiring external multiplexers or heavy desktop frameworks.
+            Built-in capabilities designed for Linux &amp; Windows workstations without requiring external multiplexers or heavy desktop frameworks.
           </p>
         </div>
 

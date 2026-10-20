@@ -5,23 +5,23 @@ export const Architecture: React.FC = () => {
   const pillars = [
     {
       icon: Network,
-      title: 'Direct X11 Wire Protocol',
-      desc: 'Instead of dynamically linking against libX11.so, libxcb.so, or GTK/Qt frameworks, Terrat implements the X11 wire protocol directly in pure Go via XGB over Unix domain sockets (/tmp/.X11-unix/X0). It compiles to a self-contained static binary that runs across Arch, Debian, Fedora, and Alpine without ABI mismatches.',
+      title: 'Direct X11 Wire & Native ConPTY',
+      desc: 'Instead of dynamically linking against libX11.so, libxcb.so, or GTK/Qt frameworks, Terrat implements the X11 wire protocol directly in pure Go via XGB on Linux, and natively connects to the Windows PseudoConsole API (ConPTY) on Windows. It compiles to a self-contained static binary that runs across Linux distributions and Windows 10/11 without CGO.',
     },
     {
       icon: Cpu,
-      title: 'In-Memory Glyph Cache',
-      desc: 'Text rendering does not require spinning up an OpenGL or Vulkan context. TrueType glyphs are rasterized into byte alpha masks and cached in RAM. Visible cells are blitted into an off-screen X11 Pixmap buffer and transferred atomically, completely preventing screen tearing and black flashes.',
+      title: 'In-Memory Glyph Cache & Double Buffering',
+      desc: 'Text rendering does not require heavy GPU context initialization. TrueType glyphs are rasterized into byte alpha masks and cached in RAM. Visible cells are blitted into off-screen double buffers (X11 Pixmap / Win32 GDI back-buffer) and transferred atomically, completely eliminating screen tearing and resizing artifacts.',
     },
     {
       icon: Terminal,
-      title: 'POSIX PTY & Signal Reflow',
-      desc: 'Each tab allocates an independent pseudo-terminal master/slave pair (/dev/ptmx) with full termios support. Changing window size or live-zooming font dynamically recalculates cell geometry and transmits SIGWINCH to active child processes (neovim, htop, bash) to reflow their layout instantly.',
+      title: 'Isolated PTYs & Leak-Free Lifecycles',
+      desc: 'Each tab allocates an independent pseudo-terminal (/dev/ptmx on Linux, ConPTY on Windows) with dedicated I/O pumps bound to Go context.Context cancellation, guaranteeing zero goroutine or memory leaks. Changing window size or zooming fonts transmits SIGWINCH or ConPTY resize events to active child processes instantly.',
     },
     {
       icon: Layers,
       title: 'Predictable Memory Bounds',
-      desc: 'The scrollback buffer is structured as a circular ring buffer with pre-allocated cell matrix chunks. Once the terminal initializes, steady-state typing and stdout throughput produce practically zero heap allocations, avoiding garbage collector pauses.',
+      desc: 'The scrollback buffer is structured as a circular ring buffer with pre-allocated cell matrix chunks. Once the terminal initializes, steady-state typing and heavy stdout throughput produce practically zero heap allocations, keeping resident memory at a rock-solid ~11MB without GC pauses.',
     },
   ];
 

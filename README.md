@@ -33,12 +33,13 @@ Most terminal emulators fall into two extremes:
 1. **Web-bloated applications** (Electron, WebAssembly, heavy webviews) consuming 200MB–400MB of RAM just to render a prompt.
 2. **Legacy C/C++ terminals** entangled with complex dynamic linkers, fragile CGO bindings, or sprawling external dependencies.
 
-**TerraTerminal (`terrat`)** is engineered for minimal resource consumption and zero-friction deployment:
-- **100% Pure Go:** Directly interfaces with the Linux X11 display server via the raw wire protocol (`xgb`) and with Windows through native ConPTY. Requires zero CGO and zero external C libraries.
+**TerraTerminal (`terrat`)** is engineered for minimal resource consumption, zero-friction deployment, and instant responsiveness:
+- **100% Pure Go:** Directly interfaces with the Linux X11 display server via the raw wire protocol (`xgb`) and with Windows through native ConPTY (PseudoConsole API). Requires zero CGO and zero external C libraries.
 - **Cross-Platform:** Native execution on **Linux** (X11 / XWayland across GNOME, KDE, XFCE, i3, Sway, Hyprland) and **Windows 10/11** with intelligent shell detection (Git Bash, WSL, PowerShell, CMD).
 - **Near-Instant Cold Boot:** Launches and renders the first frame in under **5 milliseconds**.
 - **Flyweight Memory Footprint:** Idles at approximately **~11MB RSS** during daily workflows.
-- **Tear-Free Double Buffering:** Server-side pixmap double-buffering eliminates visual tearing and resizing artifacts.
+- **Tear-Free Double Buffering:** Server-side pixmap double-buffering on Linux and high-DPI GDI back-buffering on Windows eliminate visual tearing and resizing artifacts.
+- **Managed Concurrency:** Each tab uses a dedicated I/O event pump that is stopped through `context.Context` cancellation when the tab closes.
 
 ---
 
@@ -51,15 +52,16 @@ Most terminal emulators fall into two extremes:
 - 8-direction interactive border resizing with directional cursor morphing.
 
 ### 2. Isolated Multi-Tab Architecture
-- Fully isolated tabs: each tab runs its own pseudo-terminal (PTY) instance, terminal state machine, and dedicated I/O pump with cancellation contexts to eliminate goroutine leaks.
-- Tab pills display live process names (`bash`, `nvim`, `htop`, etc.).
+- Fully isolated tabs: each tab runs its own pseudo-terminal (PTY master/slave pair on Linux, ConPTY on Windows), terminal state machine, and dedicated I/O pump with cancellation contexts to eliminate goroutine leaks.
+- Tab pills display live process names (`bash`, `nvim`, `htop`, `pwsh`, etc.).
 - Intuitive mouse controls: switch tabs, close individual tabs via `×`, or spawn sessions with `+`.
 - Clean process exit handling: exiting the active shell terminates the tab; closing the final tab cleanly exits the application.
 
 ### 3. Real-Time Font Scaling & Glyphs
 - Dynamic font scaling with `Ctrl+=` / `Ctrl+-` or `Ctrl + MouseWheel`.
 - In-memory glyph caching with instant sub-millisecond rasterization.
-- Automatic PTY window recalculation with `SIGWINCH` propagation.
+- Fallback font chain with full Persian/Arabic Unicode shaping and box-drawing support.
+- Automatic PTY window recalculation with `SIGWINCH` propagation on Linux and ConPTY resize events on Windows.
 
 ### 4. Interactive In-Buffer Search
 - Minimalist floating search bar toggled with `Ctrl+Shift+F`.
@@ -75,20 +77,23 @@ Most terminal emulators fall into two extremes:
   - **Catppuccin Mocha** (Dark)
   - **Minecraft** (Dark custom palette)
   - **Tokyo Day** (Light)
-  - **Solarized Light** (Light)
+  - **Solarized Light** (shown as “Solarized” in Preferences; Light)
   - **Auto** (Synchronizes with OS desktop theme via DBus / Desktop Portal)
 
 ### 6. Live Command Diagnostics & Typo Linter
 - Integrated lexical state-machine parser (`diagnostics/lexer.go`) supporting quotes, escapes, and chained operators (`&&`, `||`, `;`, `|`).
 - Detects unrecognized commands (`gti` &rarr; `git`, `sl` &rarr; `ls`, `mkae` &rarr; `make`), unknown subcommands (`git puch` &rarr; `git push`), unclosed quote strings, and commands requiring root privileges.
+- Intelligent path skipping for Windows executables (`C:\...`, `.exe`).
 - Press **`Alt + Enter`** to automatically apply the recommended QuickFix directly to the active prompt.
+- Press **`Ctrl + Shift + D`** to toggle diagnostics on and off.
 
-### 7. Fish-Style Ghost Autocomplete
+### 7. Fish-Style Ghost Autocomplete & Path Suggestions
 - Subtle inline suggestions rendered directly ahead of the cursor.
-- Automatically reads shell histories (`~/.bash_history`, `~/.zsh_history`) and session commands.
+- Automatically reads shell histories across platforms: `~/.bash_history`, `~/.zsh_history` on Linux, and PowerShell PSReadLine (`ConsoleHost_history.txt`) on Windows.
+- Intelligent path autocompletion supporting both `/` and `\` separators, spaces with escapes, quoted tokens (`"..."` / `'...'`), and home directory expansion (`~`, `~/`, `~\`).
 - Press **`Tab`** or **`Right Arrow`** to accept the suggestion.
 
-### 8. Hardened Clipboard & Safe Paste
+### 8. Hardened Clipboard & Anti-Pastejacking
 - Block text selection with word (double-click) and row (triple-click) matching.
 - **Smart Ctrl+C / Ctrl+V:** `Ctrl+C` copies when text is selected or sends `SIGINT` when unselected. `Ctrl+V` pastes in normal shell mode while remaining transparent in fullscreen editors (`vim`, `nano`).
 - **Bracketed Paste (DECSET 2004):** Wraps pasted text in escape markers to prevent broken indentation in REPLs.
@@ -134,6 +139,8 @@ Most terminal emulators fall into two extremes:
 | `Ctrl + 0` | Reset font size to default (13pt) |
 | `Ctrl + Wheel Up / Down` | Zoom in / out with mouse wheel |
 | `Shift + PageUp / PageDown` | Scroll terminal viewport up / down |
+| `Ctrl + Shift + Up / Down` *(Windows)* | Scroll terminal viewport up / down |
+| `Ctrl + Shift + PageUp / PageDown` *(Windows)* | Scroll to top / bottom of terminal viewport |
 | `Ctrl + ,` / `Ctrl + Shift + P` | Open / close Preferences modal |
 
 ---
@@ -168,7 +175,7 @@ terrat -e nvim /path/to/file
 
 ## Configuration
 
-Settings are saved automatically in `~/.config/terrat/config.json` (or `%APPDATA%\terrat\config.json` on Windows):
+Settings are saved automatically under the user configuration directory in `terrat/config.json`. On Linux, `XDG_CONFIG_HOME` is used when set (otherwise typically `~/.config`); on Windows, the OS user configuration directory is used. If a `config.json` file is present beside the executable, that file takes precedence for portable installs:
 
 ```json
 {
@@ -187,7 +194,7 @@ Settings are saved automatically in `~/.config/terrat/config.json` (or `%APPDATA
 
 ## Benchmarks
 
-Tested on Linux 6.x (X11 / Pure Go runtime):
+The following figures are indicative measurements reported for Linux 6.x on X11. The repository does not include the hardware details or measurement procedure, so treat them as approximate and not directly reproducible comparisons:
 
 | Metric | TerraTerminal (`terrat`) | Typical Desktop Terminal (Konsole / GNOME Terminal) |
 | :--- | :--- | :--- |
@@ -213,15 +220,20 @@ Tested on Linux 6.x (X11 / Pure Go runtime):
 git clone https://github.com/vixland4509/Terrat.git
 cd Terrat
 
-# Compile optimized static binary
+# Linux: Compile optimized static binary
 make build
 
-# Run
-./terrat
-
-# Optional: Install to ~/go/bin with desktop entry
+# Linux: Optional install to ~/go/bin with desktop entry and icon
 make install
+
+# Windows: Compile native static executable (or cross-compile from Linux)
+GOOS=windows go build -ldflags="-s -w" -o terrat.exe ./cmd/terrat
+
+# Build release packages (.deb, .rpm, .pkg.tar.zst, .tar.gz, .zip) via nfpm
+make package
 ```
+
+The package target also builds Windows portable ZIP files. Building packages requires `nfpm`; the packaging script attempts to install it with `go install` if it is not already available.
 
 ### Running Tests & Static Analysis
 
@@ -232,8 +244,8 @@ go test -race -count=1 ./...
 # Run static analysis
 go vet ./...
 
-# Cross-compile check for Windows
-GOOS=windows go vet ./...
+# Cross-compile validation for Windows
+GOOS=windows go build ./...
 ```
 
 ---
