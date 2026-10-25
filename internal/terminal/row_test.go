@@ -8,11 +8,11 @@ import (
 
 func TestGetRowStringAndURLDetection(t *testing.T) {
 	term := New(80, 24)
-	output := "Visit https://github.com/vixland4509/Terrat for source code.\r\n"
+	output := "Visit https://github.com/Kouroxsh/Terrat for source code.\r\n"
 	_, _ = term.Write([]byte(output))
 
 	rowStr := term.GetRowString(0)
-	if !strings.Contains(rowStr, "https://github.com/vixland4509/Terrat") {
+	if !strings.Contains(rowStr, "https://github.com/Kouroxsh/Terrat") {
 		t.Fatalf("row string does not contain expected URL, got: %q", rowStr)
 	}
 
@@ -23,7 +23,7 @@ func TestGetRowStringAndURLDetection(t *testing.T) {
 	}
 
 	matchedURL := rowStr[matches[0][0]:matches[0][1]]
-	if matchedURL != "https://github.com/vixland4509/Terrat" {
+	if matchedURL != "https://github.com/Kouroxsh/Terrat" {
 		t.Fatalf("unexpected matched URL: %s", matchedURL)
 	}
 }

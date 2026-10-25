@@ -8,14 +8,14 @@ import (
 	"strings"
 	"time"
 
-	"terrat/assets"
-	"terrat/internal/autosuggest"
-	"terrat/internal/config"
-	"terrat/internal/diagnostics"
-	"terrat/internal/paste"
-	"terrat/internal/platform"
-	"terrat/internal/render"
-	"terrat/internal/terminal"
+	"github.com/Kouroxsh/Terrat/assets"
+	"github.com/Kouroxsh/Terrat/internal/autosuggest"
+	"github.com/Kouroxsh/Terrat/internal/config"
+	"github.com/Kouroxsh/Terrat/internal/diagnostics"
+	"github.com/Kouroxsh/Terrat/internal/paste"
+	"github.com/Kouroxsh/Terrat/internal/platform"
+	"github.com/Kouroxsh/Terrat/internal/render"
+	"github.com/Kouroxsh/Terrat/internal/terminal"
 )
 
 const (
@@ -210,7 +210,9 @@ func (a *App) closeTab(idx int) {
 	closingTab := a.tabs[idx]
 	closingTab.Close()
 
-	a.tabs = append(a.tabs[:idx], a.tabs[idx+1:]...)
+	copy(a.tabs[idx:], a.tabs[idx+1:])
+	a.tabs[len(a.tabs)-1] = nil
+	a.tabs = a.tabs[:len(a.tabs)-1]
 	if len(a.tabs) == 0 {
 		a.Close()
 		os.Exit(0)
@@ -475,8 +477,12 @@ func (a *App) Run() error {
 	defer cursorTicker.Stop()
 	cursorBlink := true
 
-	autoScrollTicker := time.NewTicker(40 * time.Millisecond)
-	defer autoScrollTicker.Stop()
+	var autoScrollTicker *time.Ticker
+	defer func() {
+		if autoScrollTicker != nil {
+			autoScrollTicker.Stop()
+		}
+	}()
 
 	a.renderScreen(cursorBlink)
 
@@ -494,7 +500,13 @@ func (a *App) Run() error {
 		} else {
 			var autoScrollCh <-chan time.Time
 			if a.isSelecting && a.dragScrollDelta != 0 {
+				if autoScrollTicker == nil {
+					autoScrollTicker = time.NewTicker(40 * time.Millisecond)
+				}
 				autoScrollCh = autoScrollTicker.C
+			} else if autoScrollTicker != nil {
+				autoScrollTicker.Stop()
+				autoScrollTicker = nil
 			}
 
 			select {
@@ -512,23 +524,27 @@ func (a *App) Run() error {
 
 			case tabID := <-a.ptyDataNotifyCh:
 				activeUpdated := a.activeTabIdx < len(a.tabs) && a.tabs[a.activeTabIdx].ID == tabID
+				redrawNeeded := activeUpdated
 				if !activeUpdated {
 					for i := range a.tabs {
 						if a.tabs[i].ID == tabID {
+							redrawNeeded = !a.tabs[i].HasBell
 							a.tabs[i].HasBell = true
 							break
 						}
 					}
 				}
 				draining := true
-				for draining {
+				for drained := 0; draining && drained < cap(a.ptyDataNotifyCh); drained++ {
 					select {
 					case nextID := <-a.ptyDataNotifyCh:
 						if a.activeTabIdx < len(a.tabs) && a.tabs[a.activeTabIdx].ID == nextID {
 							activeUpdated = true
+							redrawNeeded = true
 						} else {
 							for i := range a.tabs {
 								if a.tabs[i].ID == nextID {
+									redrawNeeded = redrawNeeded || !a.tabs[i].HasBell
 									a.tabs[i].HasBell = true
 									break
 								}
@@ -541,7 +557,9 @@ func (a *App) Run() error {
 				if activeUpdated && a.isSearchOpen {
 					a.updateSearchMatches()
 				}
-				a.triggerRedraw()
+				if redrawNeeded {
+					a.triggerRedraw()
+				}
 				continue
 
 			case tm := <-a.tabTitleNotifyCh:

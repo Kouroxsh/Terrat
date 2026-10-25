@@ -6,22 +6,22 @@ export const Architecture: React.FC = () => {
     {
       icon: Network,
       title: 'Direct X11 Wire & Native ConPTY',
-      desc: 'Instead of dynamically linking against libX11.so, libxcb.so, or GTK/Qt frameworks, Terrat implements the X11 wire protocol directly in pure Go via XGB on Linux, and natively connects to the Windows PseudoConsole API (ConPTY) on Windows. It compiles to a self-contained static binary that runs across Linux distributions and Windows 10/11 without CGO.',
+      desc: 'On Linux, Terrat connects to X11 through XGB and works in Wayland sessions that provide XWayland. On Windows, it uses Win32 APIs and ConPTY. The project builds without CGO.',
     },
     {
       icon: Cpu,
-      title: 'In-Memory Glyph Cache & Double Buffering',
-      desc: 'Text rendering does not require heavy GPU context initialization. TrueType glyphs are rasterized into byte alpha masks and cached in RAM. Visible cells are blitted into off-screen double buffers (X11 Pixmap / Win32 GDI back-buffer) and transferred atomically, completely eliminating screen tearing and resizing artifacts.',
+      title: 'Cached Glyphs & Buffered Drawing',
+      desc: 'Glyphs are cached in memory. Linux draws into an X11 pixmap; Windows draws into a GDI back buffer before the frame is shown.',
     },
     {
       icon: Terminal,
-      title: 'Isolated PTYs & Leak-Free Lifecycles',
-      desc: 'Each tab allocates an independent pseudo-terminal (/dev/ptmx on Linux, ConPTY on Windows) with dedicated I/O pumps bound to Go context.Context cancellation, guaranteeing zero goroutine or memory leaks. Changing window size or zooming fonts transmits SIGWINCH or ConPTY resize events to active child processes instantly.',
+      title: 'Separate Shell Sessions',
+      desc: 'Each tab has a separate pseudo-terminal and terminal state. Resizing the window or changing the font updates the PTY dimensions for the running shell.',
     },
     {
       icon: Layers,
-      title: 'Predictable Memory Bounds',
-      desc: 'The scrollback buffer is structured as a circular ring buffer with pre-allocated cell matrix chunks. Once the terminal initializes, steady-state typing and heavy stdout throughput produce practically zero heap allocations, keeping resident memory at a rock-solid ~11MB without GC pauses.',
+      title: 'Screen and Scrollback',
+      desc: 'The terminal keeps the visible screen and scrollback in its terminal state. Memory use varies with the number of open tabs and their output.',
     },
   ];
 
@@ -36,7 +36,7 @@ export const Architecture: React.FC = () => {
             How Terrat works under the hood.
           </h2>
           <p className="text-sm sm:text-base text-[#a9b1d6] leading-relaxed">
-            Most modern terminal emulators either bundle a web browser (Electron) or require full GPU shader pipelines with heavy dynamic libraries. Terrat is built for developers who want a fast, simple terminal that opens instantly, uses minimal memory, and has no runtime dependencies.
+            Terrat uses platform APIs directly: X11 or XWayland on Linux, and Win32 with ConPTY on Windows. It builds without CGO and keeps rendering, terminal state, and shell sessions in one desktop application.
           </p>
         </div>
 

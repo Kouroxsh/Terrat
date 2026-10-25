@@ -355,8 +355,6 @@ func (w *Window) SetOpacity(opacity float64) {
 	).Check()
 }
 
-
-
 func (w *Window) StartResize(direction int, rootX, rootY int16) {
 	if w.AtomNetWmMoveresize == 0 || direction < 0 || direction > 8 {
 		return
@@ -774,7 +772,7 @@ func (w *Window) eventLoop() {
 			w.eventCh <- FocusOutEvent{}
 		case XKBStateNotifyEvent:
 			if len(e.Data) >= 14 && w.keyHandler != nil {
-				if e.Data[1] == 0 {
+				if e.Data[1] == 2 { // XkbStateNotify
 					w.keyHandler.SetGroup(e.Data[13])
 				}
 			}

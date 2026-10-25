@@ -4,17 +4,16 @@ import (
 	"fmt"
 	"unicode/utf8"
 
-	"terrat/internal/terminal"
+	"github.com/Kouroxsh/Terrat/internal/terminal"
 )
 
-var _ Renderer = (*Canvas)(nil)
-
 const (
-	HeaderHeight  = 34
-	PaddingLeft   = 16
-	PaddingRight  = 16
-	PaddingTop    = 12
-	PaddingBottom = 14
+	PreferencesHeaderHeight = 48
+	HeaderHeight            = 34
+	PaddingLeft             = 16
+	PaddingRight            = 16
+	PaddingTop              = 12
+	PaddingBottom           = 14
 )
 
 type TabInfo struct {
@@ -91,29 +90,22 @@ var mcDeepslate16x16 = [16][16]uint32{
 }
 
 func FillPattern16x16(buf []byte, stride, x, y, w, h int, pattern *[16][16]uint32) {
-	if w <= 0 || h <= 0 {
+	if w <= 0 || h <= 0 || stride <= 0 {
 		return
 	}
-	for row := 0; row < h; row++ {
-		py := y + row
-		if py < 0 || py*stride >= len(buf) {
-			continue
-		}
+	for py := max(0, y); py < min(len(buf)/stride, y+h); py++ {
 		bufRowOffset := py * stride
 		patY := py & 15
 
-		for col := 0; col < w; col++ {
-			px := x + col
+		for px := max(0, x); px < min(stride/4, x+w); px++ {
 			patX := px & 15
 			pixel := pattern[patY][patX]
 
 			p := bufRowOffset + px*4
-			if p >= 0 && p+3 < len(buf) {
-				buf[p+0] = byte(pixel)
-				buf[p+1] = byte(pixel >> 8)
-				buf[p+2] = byte(pixel >> 16)
-				buf[p+3] = 0xff
-			}
+			buf[p+0] = byte(pixel)
+			buf[p+1] = byte(pixel >> 8)
+			buf[p+2] = byte(pixel >> 16)
+			buf[p+3] = 0xff
 		}
 	}
 }
@@ -166,6 +158,11 @@ func DrawMinecraftBlock(buf []byte, stride, x, y int, blockType string) {
 		shCol = 0x0c6922
 		fillCol = 0x1db347
 		dotCol = 0xa8ffbe
+	case "diamond":
+		hiCol = 0x9bffff
+		shCol = 0x126b78
+		fillCol = 0x35c9d6
+		dotCol = 0xd6ffff
 	}
 
 	DrawHLine(buf, stride, x+1, y+1, size-2, hiCol)
@@ -185,6 +182,10 @@ func DrawMinecraftBlock(buf []byte, stride, x, y int, blockType string) {
 	case "emerald":
 		FillRect(buf, stride, x+4, y+4, 2, 2, dotCol)
 		FillRect(buf, stride, x+6, y+6, 2, 2, dotCol)
+	case "diamond":
+		FillRect(buf, stride, x+5, y+3, 2, 2, dotCol)
+		FillRect(buf, stride, x+4, y+5, 4, 2, dotCol)
+		FillRect(buf, stride, x+5, y+7, 2, 1, dotCol)
 	}
 }
 
@@ -194,9 +195,10 @@ type Canvas struct {
 	Stride int
 	Pixels []byte
 
-	fontEngine *FontEngine
-	cols       int
-	rows       int
+	fontEngine       *FontEngine
+	cols             int
+	rows             int
+	searchHighlights []byte
 
 	TabHitBoxes  []TabHitBox
 	NewTabHitBox [4]int
@@ -218,7 +220,7 @@ func (c *Canvas) Resize(width, height int) {
 	c.Stride = width * 4
 
 	needed := height * c.Stride
-	if len(c.Pixels) < needed {
+	if cap(c.Pixels) < needed || cap(c.Pixels) > 2*needed {
 		c.Pixels = make([]byte, needed)
 	} else {
 		c.Pixels = c.Pixels[:needed]
@@ -244,10 +246,6 @@ func (c *Canvas) Cols() int {
 
 func (c *Canvas) Rows() int {
 	return c.rows
-}
-
-func (c *Canvas) Close() {
-	// CPU Canvas has no persistent OS graphics handles to release.
 }
 
 func (c *Canvas) setPixel(x, y int, pixel uint32) {
@@ -294,7 +292,7 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 	}
 
 	titleY := (HeaderHeight - charH) / 2
-	c.TabHitBoxes = nil
+	c.TabHitBoxes = c.TabHitBoxes[:0]
 	c.NewTabHitBox = [4]int{0, 0, 0, 0}
 
 	curXTab := 12
@@ -451,34 +449,6 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 		}
 	}
 
-	if diag != nil && !term.IsAltLocked() {
-		diagMsg := diag.Message
-		if diag.Suggestion != "" {
-			diagMsg = fmt.Sprintf("%s (%s)", diag.Message, diag.Suggestion)
-		}
-		maxDiagChars := (hudX - (btnX + btnW + 24)) / charW
-		if maxDiagChars > 10 {
-			diagMsg = truncateString(diagMsg, maxDiagChars, "…")
-			chipW := len([]rune(diagMsg))*charW + 16
-			chipH := 20
-			chipX := hudX - chipW - 14
-			if chipX > btnX+btnW+12 {
-				chipY := (HeaderHeight - chipH) / 2
-				chipColor := th.MinDot.ToPixel()
-				if diag.IsError {
-					chipColor = th.CloseDot.ToPixel()
-				}
-				if isMC {
-					DrawMinecraftButton(c.Pixels, c.Stride, chipX, chipY, chipW, chipH, false)
-					c.fontEngine.DrawStringShadow(c.Pixels, c.Stride, chipX+8, chipY+(chipH-charH)/2, diagMsg, chipColor, MinecraftShadow(chipColor), true)
-				} else {
-					DrawRectBorder(c.Pixels, c.Stride, chipX, chipY, chipW, chipH, chipColor)
-					c.fontEngine.DrawString(c.Pixels, c.Stride, chipX+8, chipY+(chipH-charH)/2, diagMsg, chipColor, headerBGPixel, true)
-				}
-			}
-		}
-	}
-
 	gridStartY := HeaderHeight + PaddingTop
 	gridStartX := PaddingLeft
 	curX, curY, curVis := term.CursorLocked()
@@ -490,6 +460,31 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 	effectiveCurY := curY
 	if scrollOff > 0 {
 		effectiveCurY = curY + scrollOff
+	}
+
+	var highlights []byte
+	if len(searchMatches) > 0 {
+		needed := c.cols * c.rows
+		if cap(c.searchHighlights) < needed {
+			c.searchHighlights = make([]byte, needed)
+		} else {
+			c.searchHighlights = c.searchHighlights[:needed]
+			clear(c.searchHighlights)
+		}
+		highlights = c.searchHighlights
+		for i, match := range searchMatches {
+			if match.Row < 0 || match.Row >= c.rows {
+				continue
+			}
+			for x := max(0, match.StartCol); x <= min(c.cols-1, match.EndCol); x++ {
+				idx := match.Row*c.cols + x
+				if i == activeSearchIdx {
+					highlights[idx] = 2
+				} else if highlights[idx] == 0 {
+					highlights[idx] = 1
+				}
+			}
+		}
 	}
 
 	for y := 0; y < c.rows; y++ {
@@ -512,17 +507,12 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 				fg, bg = bg, fg
 			}
 
-			isSearchMatch := false
-			isActiveSearchMatch := false
-			for idx, sm := range searchMatches {
-				if y == sm.Row && x >= sm.StartCol && x <= sm.EndCol {
-					isSearchMatch = true
-					if idx == activeSearchIdx {
-						isActiveSearchMatch = true
-					}
-					break
-				}
+			var highlight byte
+			if len(highlights) > 0 {
+				highlight = highlights[y*c.cols+x]
 			}
+			isSearchMatch := highlight != 0
+			isActiveSearchMatch := highlight == 2
 
 			if isSearchMatch {
 				if isActiveSearchMatch {
@@ -752,7 +742,7 @@ func (c *Canvas) RenderPreferencesModal(th *terminal.Theme, selectedIdx int, opt
 		DrawHLine(c.Pixels, c.Stride, modalX+4, modalY+headerH-2, modalW-8, 0x140e09)
 		DrawHLine(c.Pixels, c.Stride, modalX+4, modalY+headerH-1, modalW-8, 0x3e291c)
 
-		title := "SETTINGS // QUICK TOGGLES"
+		title := "Settings"
 		titleX := modalX + (modalW-len(title)*charW)/2
 		c.fontEngine.DrawStringShadow(c.Pixels, c.Stride, titleX, modalY+(headerH-charH)/2, title, 0xffff55, 0x3f3f15, true)
 
@@ -812,98 +802,95 @@ func (c *Canvas) RenderPreferencesModal(th *terminal.Theme, selectedIdx int, opt
 		return modalX, modalY, modalW, modalH, rowH
 	}
 
-	modalW = maxChars*charW + 36
-	if modalW < 280 {
-		modalW = 280
-	}
-	rowH = charH + 12
-	if rowH < 26 {
-		rowH = 26
-	}
-	headerH := 36
-	footerH := 28
-	modalH = headerH + len(options)*rowH + footerH
-
-	if modalW > c.Width-20 {
-		modalW = c.Width - 20
-	}
-	if modalH > c.Height-HeaderHeight-10 {
-		modalH = c.Height - HeaderHeight - 10
-	}
-
-	modalX = c.Width - modalW - 12
-	if modalX < 6 {
-		modalX = 6
-	}
+	modalW = max(340, maxChars*charW+40)
+	rowH = max(34, charH+18)
+	headerH := PreferencesHeaderHeight
+	footerH := max(34, charH+16)
+	modalH = headerH + 4 + len(options)*rowH + 8 + footerH
+	modalW = min(modalW, c.Width-20)
+	modalH = min(modalH, c.Height-HeaderHeight-10)
+	modalX = max(6, c.Width-modalW-12)
 	modalY = HeaderHeight + 6
-
 	c.PrefModalBox = [5]int{modalX, modalY, modalW, modalH, rowH}
 
-	modalBGPixel := th.HeaderBG.ToPixel()
-	modalHeaderBGPixel := th.BG.ToPixel()
-	borderPixel := th.Border.ToPixel()
-	badgeTextPixel := th.BadgeText.ToPixel()
-	mutedTextPixel := th.MutedText.ToPixel()
-	fgPixel := th.FG.ToPixel()
-	selBGPixel := th.SelectionBG.ToPixel()
-	selFGPixel := th.SelectionFG.ToPixel()
-
-	FillRect(c.Pixels, c.Stride, modalX, modalY, modalW, modalH, modalBGPixel)
-
-	FillRect(c.Pixels, c.Stride, modalX, modalY, modalW, headerH, modalHeaderBGPixel)
-	DrawHLine(c.Pixels, c.Stride, modalX, modalY+headerH-1, modalW, th.HeaderLine.ToPixel())
-	c.fontEngine.DrawString(c.Pixels, c.Stride, modalX+14, modalY+(headerH-charH)/2, "SETTINGS // QUICK TOGGLES", badgeTextPixel, modalHeaderBGPixel, true)
+	bg := th.BG.ToPixel()
+	fg := th.FG.ToPixel()
+	line := th.HeaderLine.ToPixel()
+	accent := th.Cursor.ToPixel()
+	secondary := th.ANSI[7].ToPixel()
+	FillRect(c.Pixels, c.Stride, modalX, modalY, modalW, modalH, bg)
+	c.fontEngine.DrawString(c.Pixels, c.Stride, modalX+20, modalY+(headerH-charH)/2, "Settings", fg, bg, true)
+	DrawHLine(c.Pixels, c.Stride, modalX+20, modalY+headerH-1, modalW-40, line)
 
 	optStartY := modalY + headerH + 4
+	footerY := modalY + modalH - footerH
 	for i, opt := range options {
 		rowY := optStartY + i*rowH
-		isSelected := (i == selectedIdx)
-
-		bgPix := modalBGPixel
-		fgPix := fgPixel
-		if isSelected {
-			bgPix = selBGPixel
-			fgPix = selFGPixel
-			FillRect(c.Pixels, c.Stride, modalX+6, rowY, modalW-12, rowH-2, selBGPixel)
+		if rowY+rowH > footerY {
+			break
 		}
-
+		rowBG := bg
+		if i == selectedIdx {
+			rowBG = th.HeaderBG.ToPixel()
+			FillRect(c.Pixels, c.Stride, modalX+8, rowY+2, modalW-16, rowH-4, rowBG)
+			FillRect(c.Pixels, c.Stride, modalX+8, rowY+8, 2, rowH-16, accent)
+		}
+		if opt.ID == "theme" {
+			DrawHLine(c.Pixels, c.Stride, modalX+20, rowY, modalW-40, line)
+		}
 		textY := rowY + (rowH-charH)/2
+		rightX := modalX + modalW - 20
+		label := truncateString(opt.Label, max(1, (modalW-132)/charW), "…")
+		c.fontEngine.DrawString(c.Pixels, c.Stride, modalX+20, textY, label, fg, rowBG, false)
 
-		prefix := "  "
-		if isSelected {
-			prefix = "> "
-		}
-		c.fontEngine.DrawString(c.Pixels, c.Stride, modalX+12, textY, prefix+opt.Label, fgPix, bgPix, isSelected)
-
-		if opt.IsToggle {
-			badge := "[OFF]"
-			badgeColor := mutedTextPixel
+		switch {
+		case opt.ID == "search":
+			value := "Open >"
+			c.fontEngine.DrawString(c.Pixels, c.Stride, rightX-len(value)*charW, textY, value, secondary, rowBG, false)
+		case opt.IsToggle:
+			const switchW, switchH = 28, 14
+			x := rightX - switchW
+			y := rowY + (rowH-switchH)/2
+			track := th.Border.ToPixel()
+			knobX := x + 3
 			if opt.Enabled {
-				badge = "[ON]"
-				badgeColor = th.MinDot.ToPixel()
+				track = accent
+				knobX = x + switchW - 11
 			}
-			badgeX := modalX + modalW - (len(badge) * charW) - 14
-			c.fontEngine.DrawString(c.Pixels, c.Stride, badgeX, textY, badge, badgeColor, bgPix, true)
-		} else if opt.Value != "" {
-			badgeX := modalX + modalW - (len(opt.Value) * charW) - 14
-			c.fontEngine.DrawString(c.Pixels, c.Stride, badgeX, textY, opt.Value, badgeTextPixel, bgPix, true)
-		} else if opt.ID == savedID {
-			activeBadge := "[SAVED]"
-			badgeX := modalX + modalW - (len(activeBadge) * charW) - 14
-			c.fontEngine.DrawString(c.Pixels, c.Stride, badgeX, textY, activeBadge, badgeTextPixel, bgPix, true)
+			FillRect(c.Pixels, c.Stride, x, y, switchW, switchH, track)
+			knob := fg
+			if opt.Enabled {
+				knob = bg
+			}
+			FillRect(c.Pixels, c.Stride, knobX, y+3, 8, 8, knob)
+		default:
+			value := opt.Value
+			if value == "" && opt.ID == savedID {
+				value = "Saved"
+			}
+			value = truncateString(value, max(1, (modalW/2-40)/charW), "…")
+			valueX := rightX - (len([]rune(value))+2)*charW
+			c.fontEngine.DrawString(c.Pixels, c.Stride, valueX, textY, value, fg, rowBG, false)
+			c.fontEngine.DrawString(c.Pixels, c.Stride, rightX-charW, textY, ">", secondary, rowBG, false)
 		}
 	}
 
-	footerY := modalY + modalH - footerH
-	DrawHLine(c.Pixels, c.Stride, modalX, footerY, modalW, th.HeaderLine.ToPixel())
-	hints := "Click/Enter: Toggle  ESC: Close"
-	hintsX := modalX + (modalW-len(hints)*charW)/2
-	if hintsX < modalX+10 {
-		hintsX = modalX + 10
+	DrawHLine(c.Pixels, c.Stride, modalX+20, footerY, modalW-40, line)
+	hint := "Enter to toggle"
+	if selectedIdx >= 0 && selectedIdx < len(options) {
+		if options[selectedIdx].ID == "search" {
+			hint = "Enter to open"
+		} else if !options[selectedIdx].IsToggle {
+			hint = "Left/Right to adjust"
+		}
 	}
-	c.fontEngine.DrawString(c.Pixels, c.Stride, hintsX, footerY+(footerH-charH)/2, hints, mutedTextPixel, modalBGPixel, false)
-
-	DrawRectBorder(c.Pixels, c.Stride, modalX, modalY, modalW, modalH, borderPixel)
+	textY := footerY + (footerH-charH)/2
+	closeHint := "Esc close"
+	if len(hint)*charW+len(closeHint)*charW+52 <= modalW {
+		c.fontEngine.DrawString(c.Pixels, c.Stride, modalX+20, textY, hint, secondary, bg, false)
+	}
+	c.fontEngine.DrawString(c.Pixels, c.Stride, modalX+modalW-20-len(closeHint)*charW, textY, closeHint, secondary, bg, false)
+	DrawRectBorder(c.Pixels, c.Stride, modalX, modalY, modalW, modalH, th.Border.ToPixel())
 
 	return modalX, modalY, modalW, modalH, rowH
 }

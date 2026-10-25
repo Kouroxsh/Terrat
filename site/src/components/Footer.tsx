@@ -8,7 +8,7 @@ export const Footer: React.FC = () => {
         <div className="flex items-center gap-3">
           <img src="./icon.png" alt="Terrat Logo" className="w-5 h-5 rounded-full border border-[#292e42]" />
           <div>
-            <span className="text-[#c0caf5] font-semibold">TerraTerminal</span> &mdash; Pure Go terminal emulator for Linux
+            <span className="text-[#c0caf5] font-semibold">TerraTerminal</span> &mdash; Go terminal emulator for Linux and Windows
           </div>
         </div>
 
@@ -16,13 +16,13 @@ export const Footer: React.FC = () => {
           <span>GNU GPLv3 License</span>
           <span className="text-[#292e42]">&bull;</span>
           <a
-            href="https://github.com/vixland4509/Terrat"
+            href="https://github.com/Kouroxsh/Terrat"
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-[#c0caf5] transition-colors flex items-center gap-1.5 text-[#7aa2f7]"
           >
             <GithubIcon className="w-3.5 h-3.5" />
-            <span>github.com/vixland4509/Terrat</span>
+            <span>github.com/Kouroxsh/Terrat</span>
           </a>
         </div>
       </div>

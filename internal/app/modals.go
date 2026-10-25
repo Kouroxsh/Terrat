@@ -5,10 +5,10 @@ import (
 	"net/url"
 	"regexp"
 
-	"terrat/internal/config"
-	"terrat/internal/platform"
-	"terrat/internal/render"
-	"terrat/internal/terminal"
+	"github.com/Kouroxsh/Terrat/internal/config"
+	"github.com/Kouroxsh/Terrat/internal/platform"
+	"github.com/Kouroxsh/Terrat/internal/render"
+	"github.com/Kouroxsh/Terrat/internal/terminal"
 )
 
 var urlRegex = regexp.MustCompile(`https?://[^\s<>"'()]+`)
@@ -74,41 +74,41 @@ func getSettingsItems(appConfig *config.Config, isSearchOpen bool) []render.Pref
 	return []render.PrefOption{
 		{
 			ID:       "diagnostics",
-			Label:    "Live Diagnostics",
+			Label:    "Command diagnostics",
 			IsToggle: true,
 			Enabled:  appConfig.Diagnostics,
 		},
 		{
 			ID:       "ghost_text",
-			Label:    "Ghost Autocomplete",
+			Label:    "Inline suggestions",
 			IsToggle: true,
 			Enabled:  appConfig.GhostText,
 		},
 		{
 			ID:       "sanitize_paste",
-			Label:    "Sanitize Pasted Text",
+			Label:    "Clean pasted text",
 			IsToggle: true,
 			Enabled:  appConfig.SanitizePaste,
 		},
 		{
 			ID:       "search",
-			Label:    "Find in Buffer",
+			Label:    "Find in scrollback",
 			IsToggle: true,
 			Enabled:  isSearchOpen,
 		},
 		{
 			ID:    "theme",
-			Label: "Color Theme",
+			Label: "Color theme",
 			Value: themeDisplay,
 		},
 		{
 			ID:    "font_size",
-			Label: "Font Size",
+			Label: "Font size",
 			Value: fmt.Sprintf("%.0fpt", appConfig.FontSize),
 		},
 		{
 			ID:    "opacity",
-			Label: "Window Opacity",
+			Label: "Window opacity",
 			Value: fmt.Sprintf("%d%%", int(appConfig.Opacity*100)),
 		},
 	}

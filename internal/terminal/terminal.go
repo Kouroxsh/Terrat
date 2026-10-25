@@ -25,10 +25,11 @@ type Terminal struct {
 	cols int
 	rows int
 
-	lines      [][]Cell
-	scrollback [][]Cell
-	maxHistory int
-	scrollOff  int
+	lines        [][]Cell
+	scrollback   [][]Cell
+	historyStore [][]Cell
+	maxHistory   int
+	scrollOff    int
 
 	altLines [][]Cell
 	isAlt    bool
@@ -63,11 +64,12 @@ type Terminal struct {
 	mouseTracking bool
 	mouseSGR      bool
 
-	state      parserState
-	csiParams  []string
-	csiPrivate bool
-	csiLeader  rune
-	oscBuffer  []rune
+	state       parserState
+	pendingUTF8 []byte
+	csiParams   []string
+	csiPrivate  bool
+	csiLeader   rune
+	oscBuffer   []rune
 
 	title        string
 	TitleChan    chan string
@@ -546,14 +548,23 @@ func (t *Terminal) Write(p []byte) (int, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	n := len(p)
+	if len(t.pendingUTF8) != 0 {
+		p = append(t.pendingUTF8, p...)
+		t.pendingUTF8 = nil
+	}
 	idx := 0
 	for idx < len(p) {
+		if !utf8.FullRune(p[idx:]) {
+			t.pendingUTF8 = append([]byte(nil), p[idx:]...)
+			break
+		}
 		r, size := utf8.DecodeRune(p[idx:])
 		idx += size
 		t.processRune(r)
 	}
 
-	return len(p), nil
+	return n, nil
 }
 
 func (t *Terminal) processRune(r rune) {
@@ -591,7 +602,7 @@ func (t *Terminal) processRune(r rune) {
 		switch r {
 		case '[':
 			t.state = stateCSI
-			t.csiParams = nil
+			t.csiParams = t.csiParams[:0]
 			t.csiPrivate = false
 			t.csiLeader = 0
 		case ']':
@@ -635,22 +646,15 @@ func (t *Terminal) processRune(r rune) {
 		}
 		if (r >= '0' && r <= '9') || r == ';' {
 			if len(t.csiParams) == 0 {
-				if r == ';' {
-					t.csiParams = []string{"", ""}
-				} else {
-					t.csiParams = []string{string(r)}
+				t.csiParams = append(t.csiParams, "")
+			}
+			last := len(t.csiParams) - 1
+			if r == ';' {
+				if len(t.csiParams) < 32 {
+					t.csiParams = append(t.csiParams, "")
 				}
-			} else {
-				last := len(t.csiParams) - 1
-				if r == ';' {
-					if len(t.csiParams) < 32 {
-						t.csiParams = append(t.csiParams, "")
-					}
-				} else {
-					if len(t.csiParams[last]) < 16 {
-						t.csiParams[last] += string(r)
-					}
-				}
+			} else if len(t.csiParams[last]) < 16 {
+				t.csiParams[last] += string(r)
 			}
 			return
 		}
@@ -731,18 +735,26 @@ func (t *Terminal) scrollUp(count int) {
 	grid := t.activeGrid()
 
 	for c := 0; c < count; c++ {
-		if t.scrollTop == 0 && !t.isAlt {
-			saved := make([]Cell, t.cols)
-			copy(saved, grid[0])
-			t.scrollback = append(t.scrollback, saved)
+		recycled := grid[t.scrollTop]
+		if t.scrollTop == 0 && !t.isAlt && t.maxHistory > 0 {
+			if len(t.scrollback) == t.maxHistory {
+				recycled = t.scrollback[0]
+			} else {
+				recycled = nil
+			}
+			// Compact the sliding history window into reusable storage.
+			if len(t.scrollback) == cap(t.scrollback) && len(t.scrollback) >= t.maxHistory {
+				if len(t.historyStore) != 2*t.maxHistory {
+					t.historyStore = make([][]Cell, 2*t.maxHistory)
+				}
+				copy(t.historyStore, t.scrollback)
+				clear(t.historyStore[len(t.scrollback):])
+				t.scrollback = t.historyStore[:len(t.scrollback)]
+			}
+			t.scrollback = append(t.scrollback, grid[0])
 			if len(t.scrollback) > t.maxHistory {
 				t.scrollback[0] = nil
 				t.scrollback = t.scrollback[1:]
-				if cap(t.scrollback) > t.maxHistory*2 && len(t.scrollback) == t.maxHistory {
-					compacted := make([][]Cell, t.maxHistory)
-					copy(compacted, t.scrollback)
-					t.scrollback = compacted
-				}
 			} else if t.scrollOff > 0 {
 				t.scrollOff++
 			}
@@ -752,7 +764,14 @@ func (t *Terminal) scrollUp(count int) {
 			grid[r] = grid[r+1]
 		}
 
-		grid[t.scrollBottom] = t.makeRow()
+		if len(recycled) != t.cols {
+			recycled = t.makeRow()
+		} else {
+			for i := range recycled {
+				recycled[i] = EmptyCell()
+			}
+		}
+		grid[t.scrollBottom] = recycled
 	}
 	if t.scrollOff > len(t.scrollback) {
 		t.scrollOff = len(t.scrollback)
@@ -762,10 +781,14 @@ func (t *Terminal) scrollUp(count int) {
 func (t *Terminal) reverseIndex() {
 	if t.cursorY <= t.scrollTop {
 		grid := t.activeGrid()
+		recycled := grid[t.scrollBottom]
 		for r := t.scrollBottom; r > t.scrollTop; r-- {
 			grid[r] = grid[r-1]
 		}
-		grid[t.scrollTop] = t.makeRow()
+		for i := range recycled {
+			recycled[i] = EmptyCell()
+		}
+		grid[t.scrollTop] = recycled
 	} else {
 		t.cursorY--
 	}
@@ -806,7 +829,8 @@ func (t *Terminal) restoreCursor() {
 }
 
 func (t *Terminal) executeCSI(cmd rune) {
-	args := make([]int, len(t.csiParams))
+	var argBuffer [32]int
+	args := argBuffer[:len(t.csiParams)]
 	for i, p := range t.csiParams {
 		val, _ := strconv.Atoi(p)
 		args[i] = val
@@ -943,6 +967,7 @@ func (t *Terminal) executeCSI(cmd rune) {
 			}
 		case 3:
 			t.scrollback = nil
+			t.historyStore = nil
 			t.scrollOff = 0
 		}
 

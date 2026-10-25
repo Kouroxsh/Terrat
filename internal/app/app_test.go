@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"terrat/internal/config"
-	"terrat/internal/platform"
-	"terrat/internal/terminal"
+	"github.com/Kouroxsh/Terrat/internal/config"
+	"github.com/Kouroxsh/Terrat/internal/platform"
+	"github.com/Kouroxsh/Terrat/internal/terminal"
 )
 
 func TestURLRegexDetection(t *testing.T) {
@@ -16,8 +16,8 @@ func TestURLRegexDetection(t *testing.T) {
 		expectedURL string
 	}{
 		{
-			input:       "Visit https://github.com/vixland4509/Terrat for details.",
-			expectedURL: "https://github.com/vixland4509/Terrat",
+			input:       "Visit https://github.com/Kouroxsh/Terrat for details.",
+			expectedURL: "https://github.com/Kouroxsh/Terrat",
 		},
 		{
 			input:       "Check http://localhost:8080/api/v1?user=test&mode=debug!",

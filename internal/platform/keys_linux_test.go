@@ -22,28 +22,12 @@ func TestKeysymToRune(t *testing.T) {
 		t.Fatalf("expected 'é', got %q, %v", r, ok)
 	}
 
-	// Direct Unicode (Persian 'پ' = U+067E)
-	r, ok = KeysymToRune(0x067e)
-	if !ok || r != 'پ' {
-		t.Fatalf("expected 'پ', got %q, %v", r, ok)
-	}
-
-	// Direct Unicode with 0x01000000 flag
-	r, ok = KeysymToRune(0x0100067e)
-	if !ok || r != 'پ' {
-		t.Fatalf("expected 'پ' from 0x0100067e, got %q, %v", r, ok)
-	}
-
-	// Standard X11 Arabic comma (0x05ac -> U+060C)
-	r, ok = KeysymToRune(0x05ac)
-	if !ok || r != '\u060C' {
-		t.Fatalf("expected Arabic comma, got %q, %v", r, ok)
-	}
-
-	// Standard X11 Arabic alef (0x05c7 -> U+0627)
-	r, ok = KeysymToRune(0x05c7)
-	if !ok || r != 'ا' {
-		t.Fatalf("expected 'ا', got %q, %v", r, ok)
+	// Direct Unicode and flagged Unicode keysyms.
+	for _, sym := range []xproto.Keysym{0x03bb, 0x010003bb} {
+		r, ok := KeysymToRune(sym)
+		if !ok || r != 'λ' {
+			t.Fatalf("expected lambda, got %q, %v", r, ok)
+		}
 	}
 
 	// Numpad / Keypad digits 0-9
@@ -155,14 +139,14 @@ func TestXKBState(t *testing.T) {
 	t.Logf("X_kbGetState group=%d, lockedGroup=%d", replyState[12], replyState[13])
 	reqSelect := make([]byte, 16)
 	reqSelect[0] = ext.MajorOpcode
-	reqSelect[1] = 1 // X_kbSelectEvents
-	xgb.Put16(reqSelect[2:], 4) // 16 bytes / 4
-	xgb.Put16(reqSelect[4:], 0x0100) // XkbUseCoreKbd
-	xgb.Put16(reqSelect[6:], 0x0010) // affectWhich: XkbStateNotify (1<<4)
-	xgb.Put16(reqSelect[8:], 0)      // clear
+	reqSelect[1] = 1                  // X_kbSelectEvents
+	xgb.Put16(reqSelect[2:], 4)       // 16 bytes / 4
+	xgb.Put16(reqSelect[4:], 0x0100)  // XkbUseCoreKbd
+	xgb.Put16(reqSelect[6:], 0x0010)  // affectWhich: XkbStateNotify (1<<4)
+	xgb.Put16(reqSelect[8:], 0)       // clear
 	xgb.Put16(reqSelect[10:], 0x0010) // selectAll: XkbStateNotify (1<<4)
-	xgb.Put16(reqSelect[12:], 0)     // affectMap
-	xgb.Put16(reqSelect[14:], 0)     // map
+	xgb.Put16(reqSelect[12:], 0)      // affectMap
+	xgb.Put16(reqSelect[14:], 0)      // map
 
 	cookieSelect := conn.NewCookie(true, false)
 	conn.NewRequest(reqSelect, cookieSelect)
@@ -172,13 +156,13 @@ func TestXKBState(t *testing.T) {
 	t.Logf("X_kbSelectEvents succeeded!")
 }
 
-func TestPersianGroupTranslation(t *testing.T) {
+func TestUnicodeGroupTranslation(t *testing.T) {
 	kh := &KeyHandler{
 		minKeycode:        38,
 		maxKeycode:        38,
 		keysymsPerKeycode: 4,
 		keysyms: []xproto.Keysym{
-			'a', 'A', 0x05d4, 0x064e, // sheen (ش), fatha
+			'a', 'A', 0x010003bb, 0x0100039b, // lambda, capital lambda
 		},
 	}
 
@@ -190,17 +174,17 @@ func TestPersianGroupTranslation(t *testing.T) {
 	}
 
 	// 2. Group 1 via ev.State (bits 13-14)
-	evFA := xproto.KeyPressEvent{Detail: 38, State: 1 << 13}
-	bFA, _ := kh.Translate(evFA)
-	if string(bFA) != "ش" {
-		t.Fatalf("expected 'ش' in group 1 via State, got %q", string(bFA))
+	evGroup := xproto.KeyPressEvent{Detail: 38, State: 1 << 13}
+	bGroup, _ := kh.Translate(evGroup)
+	if string(bGroup) != "λ" {
+		t.Fatalf("expected 'λ' in group 1 via State, got %q", string(bGroup))
 	}
 
 	// 3. Group 1 via kh.activeGroup
 	kh.SetGroup(1)
-	evFA2 := xproto.KeyPressEvent{Detail: 38, State: 0}
-	bFA2, _ := kh.Translate(evFA2)
-	if string(bFA2) != "ش" {
-		t.Fatalf("expected 'ش' in group 1 via activeGroup, got %q", string(bFA2))
+	evGroup2 := xproto.KeyPressEvent{Detail: 38, State: 0}
+	bGroup2, _ := kh.Translate(evGroup2)
+	if string(bGroup2) != "λ" {
+		t.Fatalf("expected 'λ' in group 1 via activeGroup, got %q", string(bGroup2))
 	}
 }

@@ -5,9 +5,9 @@
 <h1 align="center">TerraTerminal (<code>terrat</code>)</h1>
 
 <p align="center">
-  <b>A lightweight, high-performance minimalist terminal emulator for Linux and Windows, written in pure Go.</b>
+  <b>A terminal emulator for Linux and Windows, written in Go.</b>
   <br>
-  <i>Zero CGO &bull; Sub-5ms Cold Boot &bull; ~11MB Idle RAM &bull; Single Static Binary &bull; v0.2.5</i>
+  <i>Zero CGO &bull; Linux and Windows &bull; Single Binary &bull; v0.2.5</i>
 </p>
 
 <p align="center">
@@ -29,17 +29,9 @@
 
 ## Overview
 
-Most terminal emulators fall into two extremes:
-1. **Web-bloated applications** (Electron, WebAssembly, heavy webviews) consuming 200MB–400MB of RAM just to render a prompt.
-2. **Legacy C/C++ terminals** entangled with complex dynamic linkers, fragile CGO bindings, or sprawling external dependencies.
+TerraTerminal (`terrat`) is a desktop terminal emulator for Linux and Windows. It uses X11 or XWayland on Linux and Win32 with ConPTY on Windows, and builds without CGO. It includes tabs, configurable themes, font scaling, search, shell-history suggestions, and command diagnostics.
 
-**TerraTerminal (`terrat`)** is engineered for minimal resource consumption, zero-friction deployment, and instant responsiveness:
-- **100% Pure Go:** Directly interfaces with the Linux X11 display server via the raw wire protocol (`xgb`) and with Windows through native ConPTY (PseudoConsole API). Requires zero CGO and zero external C libraries.
-- **Cross-Platform:** Native execution on **Linux** (X11 / XWayland across GNOME, KDE, XFCE, i3, Sway, Hyprland) and **Windows 10/11** with intelligent shell detection (Git Bash, WSL, PowerShell, CMD).
-- **Near-Instant Cold Boot:** Launches and renders the first frame in under **5 milliseconds**.
-- **Flyweight Memory Footprint:** Idles at approximately **~11MB RSS** during daily workflows.
-- **Tear-Free Double Buffering:** Server-side pixmap double-buffering on Linux and high-DPI GDI back-buffering on Windows eliminate visual tearing and resizing artifacts.
-- **Managed Concurrency:** Each tab uses a dedicated I/O event pump that is stopped through `context.Context` cancellation when the tab closes.
+Each tab has its own terminal state and shell session. Rendering uses an in-memory canvas, while platform-specific code presents the window. See the benchmark results below for measurements on one Linux system; they describe selected operations, not whole-application memory use or startup time.
 
 ---
 
@@ -52,15 +44,16 @@ Most terminal emulators fall into two extremes:
 - 8-direction interactive border resizing with directional cursor morphing.
 
 ### 2. Isolated Multi-Tab Architecture
-- Fully isolated tabs: each tab runs its own pseudo-terminal (PTY master/slave pair on Linux, ConPTY on Windows), terminal state machine, and dedicated I/O pump with cancellation contexts to eliminate goroutine leaks.
+- Each tab runs its own pseudo-terminal session (PTY on Linux, ConPTY on Windows) and terminal state.
 - Tab pills display live process names (`bash`, `nvim`, `htop`, `pwsh`, etc.).
 - Intuitive mouse controls: switch tabs, close individual tabs via `×`, or spawn sessions with `+`.
 - Clean process exit handling: exiting the active shell terminates the tab; closing the final tab cleanly exits the application.
 
 ### 3. Real-Time Font Scaling & Glyphs
 - Dynamic font scaling with `Ctrl+=` / `Ctrl+-` or `Ctrl + MouseWheel`.
-- In-memory glyph caching with instant sub-millisecond rasterization.
-- Fallback font chain with full Persian/Arabic Unicode shaping and box-drawing support.
+- In-memory glyph caching and system-font fallback.
+- Box-drawing support.
+- Persian/Arabic display is temporarily disabled; Arabic-script glyphs render as replacement characters. Right-to-left layout is unsupported.
 - Automatic PTY window recalculation with `SIGWINCH` propagation on Linux and ConPTY resize events on Windows.
 
 ### 4. Interactive In-Buffer Search
@@ -81,7 +74,7 @@ Most terminal emulators fall into two extremes:
   - **Auto** (Synchronizes with OS desktop theme via DBus / Desktop Portal)
 
 ### 6. Live Command Diagnostics & Typo Linter
-- Integrated lexical state-machine parser (`diagnostics/lexer.go`) supporting quotes, escapes, and chained operators (`&&`, `||`, `;`, `|`).
+- Integrated command parser supporting quotes, escapes, and chained operators (`&&`, `||`, `;`, `|`).
 - Detects unrecognized commands (`gti` &rarr; `git`, `sl` &rarr; `ls`, `mkae` &rarr; `make`), unknown subcommands (`git puch` &rarr; `git push`), unclosed quote strings, and commands requiring root privileges.
 - Intelligent path skipping for Windows executables (`C:\...`, `.exe`).
 - Press **`Alt + Enter`** to automatically apply the recommended QuickFix directly to the active prompt.
@@ -97,7 +90,7 @@ Most terminal emulators fall into two extremes:
 - Block text selection with word (double-click) and row (triple-click) matching.
 - **Smart Ctrl+C / Ctrl+V:** `Ctrl+C` copies when text is selected or sends `SIGINT` when unselected. `Ctrl+V` pastes in normal shell mode while remaining transparent in fullscreen editors (`vim`, `nano`).
 - **Bracketed Paste (DECSET 2004):** Wraps pasted text in escape markers to prevent broken indentation in REPLs.
-- **Anti-Pastejacking Sanitization:** Strips malicious control codes, dangerous escapes, and bidirectional overrides while fully preserving legitimate Unicode characters like Persian ZWNJ (`\u200C`).
+- **Anti-Pastejacking Sanitization:** Strips malicious control codes, dangerous escapes, and bidirectional overrides while fully preserving legitimate Unicode format characters (`\u200C`).
 
 ---
 
@@ -194,15 +187,24 @@ Settings are saved automatically under the user configuration directory in `terr
 
 ## Benchmarks
 
-The following figures are indicative measurements reported for Linux 6.x on X11. The repository does not include the hardware details or measurement procedure, so treat them as approximate and not directly reproducible comparisons:
+These Go microbenchmarks were run five times on Linux/amd64 with Go 1.22.6 on an Intel Core i5-8500 CPU @ 3.00 GHz. Values below are the median of the five runs. Times are per benchmark operation.
 
-| Metric | TerraTerminal (`terrat`) | Typical Desktop Terminal (Konsole / GNOME Terminal) |
-| :--- | :--- | :--- |
-| **Cold Startup Time** | **~4.6 ms** | ~40 – 120 ms |
-| **Idle Memory (RSS)** | **~11 MB** | ~120 – 170 MB *(12x–15x heavier)* |
-| **Idle CPU Usage** | **0.00%** *(Kernel epoll sleep)* | 0.2% – 1.5% |
-| **Binary Footprint** | **~4.1 MB** *(Self-contained)* | Shared multi-MB UI runtime dependencies |
-| **Runtime Requirements** | **Zero CGO / Pure Go** | Qt, GTK, or WebEngine runtime stacks |
+| Operation | Result | Allocations |
+| :--- | ---: | ---: |
+| Write 128 plain terminal lines | 95.3 µs | 0 B/op, 0 allocs/op |
+| Write 128 ANSI-colored terminal lines | 119.4 µs | 2,048 B/op, 512 allocs/op |
+| Write 128 alternate-screen lines | 89.0 µs | 0 B/op, 0 allocs/op |
+| Render a 1024 × 640 frame | 973 µs | 32 B/op, 3 allocs/op |
+| Render a 1024 × 640 frame with search matches | 2.06 ms | 32 B/op, 3 allocs/op |
+| Fill a 1024 × 640 canvas | 70.8 µs | 0 B/op, 0 allocs/op |
+| Create and close the font engine | 1.96 ms | 677,434 B/op, 1,199 allocs/op |
+| Add an entry to shell history | 42.4 ns | 0 B/op, 0 allocs/op |
+
+The terminal-write benchmark sends a 128-line payload after warming the terminal. Rendering uses the CPU canvas and does not include X11/Win32 presentation, window composition, or shell startup. These figures are not whole-app latency or resident-memory measurements and should not be read as a cross-platform comparison. To repeat them, run:
+
+```bash
+go test ./internal/terminal ./internal/render ./internal/autosuggest -run '^$' -bench . -benchmem -benchtime=500ms -count=5
+```
 
 ---
 
@@ -217,7 +219,7 @@ The following figures are indicative measurements reported for Linux 6.x on X11.
 
 ```bash
 # Clone the repository
-git clone https://github.com/vixland4509/Terrat.git
+git clone https://github.com/Kouroxsh/Terrat.git
 cd Terrat
 
 # Linux: Compile optimized static binary

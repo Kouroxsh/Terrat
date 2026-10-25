@@ -45,6 +45,8 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Editor & IDE Cache
+.codex/
+.agents/
 .vscode/
 .idea/
 *.swp

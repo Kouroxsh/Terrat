@@ -40,7 +40,7 @@ func TestFontEngineZoom(t *testing.T) {
 	}
 }
 
-func TestFallbackAndBoxDrawing(t *testing.T) {
+func TestBoxDrawing(t *testing.T) {
 	fe, err := NewFontEngine(13.0)
 	if err != nil {
 		t.Fatalf("failed to initialize font engine: %v", err)
@@ -72,22 +72,20 @@ func TestFallbackAndBoxDrawing(t *testing.T) {
 			t.Fatalf("expected full block pixel %d to be 0xff, got 0x%02x", i, a)
 		}
 	}
+}
 
-	// 3. Persian / Arabic fallback
-	persianRunes := []rune{0x0633, 0x0644, 0x0627, 0x0645} // سلام
-	for _, r := range persianRunes {
-		mask := fe.GetGlyph(r, false)
-		if mask == nil {
-			t.Fatalf("expected non-nil mask for Persian rune U+%04X", r)
-		}
-		nonZero := 0
-		for _, a := range mask.Alpha {
-			if a > 0 {
-				nonZero++
+func TestArabicScriptDisplayDisabled(t *testing.T) {
+	fe, err := NewFontEngine(13)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fe.Close()
+	for _, bold := range []bool{false, true} {
+		replacement := fe.GetGlyph('\ufffd', bold)
+		for _, r := range []rune{'\u0633', '\u067e', '\u06cc', '\ufbfe', '\ufefb'} {
+			if got := fe.GetGlyph(r, bold); got != replacement {
+				t.Fatalf("script rune %U must use the replacement glyph", r)
 			}
-		}
-		if nonZero == 0 {
-			t.Fatalf("expected Persian rune U+%04X to render non-zero pixels", r)
 		}
 	}
 }

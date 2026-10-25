@@ -38,10 +38,10 @@ export const InstallSection: React.FC = () => {
             INSTALLATION &amp; CONFIGURATION
           </div>
           <h2 className="text-3xl sm:text-5xl font-bold tracking-tight text-white mb-3">
-            Install and run in seconds.
+            Install TerraTerminal.
           </h2>
           <p className="text-sm sm:text-base text-[#a9b1d6] max-w-2xl">
-            Because Terrat is written in 100% pure Go without CGO, building produces a single static binary with zero dependency friction on both Linux and Windows.
+            Terrat builds without CGO. The release process creates standalone binaries for Linux and Windows; Linux also needs an X11 server or XWayland to open a window.
           </p>
         </div>
 
@@ -60,9 +60,9 @@ export const InstallSection: React.FC = () => {
                 Installs binary directly to your <code>$GOPATH/bin</code>:
               </p>
               <div className="p-3 bg-[#13141c] border border-[#292e42] rounded-[2px] font-mono text-xs flex items-center justify-between gap-3">
-                <code className="text-[#c0caf5] select-all break-all">go install github.com/vixland4509/Terrat@latest</code>
+                <code className="text-[#c0caf5] select-all break-all">go install github.com/Kouroxsh/Terrat/cmd/terrat@latest</code>
                 <button
-                  onClick={() => copyToClipboard('go install github.com/vixland4509/Terrat@latest', 'go')}
+                  onClick={() => copyToClipboard('go install github.com/Kouroxsh/Terrat/cmd/terrat@latest', 'go')}
                   className="text-[#565f89] hover:text-[#c0caf5] transition-colors shrink-0"
                   title="Copy command"
                 >
@@ -89,13 +89,13 @@ export const InstallSection: React.FC = () => {
               </p>
               <div className="p-3 bg-[#13141c] border border-[#292e42] rounded-[2px] font-mono text-xs flex items-center justify-between gap-3">
                 <pre className="text-[#c0caf5] select-all leading-relaxed whitespace-pre font-mono text-[11px]">
-git clone https://github.com/vixland4509/Terrat.git
+git clone https://github.com/Kouroxsh/Terrat.git
 cd Terrat &amp;&amp; make install
                 </pre>
                 <button
                   onClick={() =>
                     copyToClipboard(
-                      'git clone https://github.com/vixland4509/Terrat.git && cd Terrat && make install',
+                      'git clone https://github.com/Kouroxsh/Terrat.git && cd Terrat && make install',
                       'make'
                     )
                   }
@@ -107,7 +107,7 @@ cd Terrat &amp;&amp; make install
               </div>
             </div>
             <div className="mt-4 text-[11px] font-mono text-[#565f89]">
-              Installs to <code>~/.local/bin/terrat</code> and registers in app menu.
+              Installs to <code>~/go/bin/terrat</code> and registers in the app menu.
             </div>
           </div>
 
@@ -161,7 +161,7 @@ go build -ldflags="-s -w" -o terrat.exe ./cmd/terrat
             </div>
           </div>
           <a
-            href="https://github.com/vixland4509/Terrat/issues"
+            href="https://github.com/Kouroxsh/Terrat/issues"
             target="_blank"
             rel="noopener noreferrer"
             className="px-3.5 py-2 bg-[#e0af68]/15 hover:bg-[#e0af68]/25 text-[#e0af68] hover:text-white border border-[#e0af68]/40 rounded-[2px] transition-all shrink-0 font-semibold"

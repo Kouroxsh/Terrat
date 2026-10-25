@@ -119,3 +119,20 @@ func TestConfigShellAndDefaultShell(t *testing.T) {
 		t.Fatalf("expected Shell to be 'bash' when default_shell is provided, got %q", cfg2.Shell)
 	}
 }
+
+func TestPortableConfigTakesPrecedenceOverXDG(t *testing.T) {
+	tmpDir := t.TempDir()
+	executable := filepath.Join(tmpDir, "terrat")
+	portablePath := filepath.Join(tmpDir, "config.json")
+	if err := os.WriteFile(portablePath, []byte(`{"theme":"tokyo-night"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := configPath(executable, filepath.Join(tmpDir, "xdg"), filepath.Join(tmpDir, "user-config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != portablePath {
+		t.Fatalf("expected portable config %q to take precedence, got %q", portablePath, got)
+	}
+}

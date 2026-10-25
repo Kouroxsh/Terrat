@@ -9,11 +9,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"terrat/internal/config"
-	"terrat/internal/diagnostics"
-	"terrat/internal/platform"
-	"terrat/internal/render"
-	"terrat/internal/terminal"
+	"github.com/Kouroxsh/Terrat/internal/config"
+	"github.com/Kouroxsh/Terrat/internal/diagnostics"
+	"github.com/Kouroxsh/Terrat/internal/platform"
+	"github.com/Kouroxsh/Terrat/internal/render"
+	"github.com/Kouroxsh/Terrat/internal/terminal"
 )
 
 func (a *App) toCellCoords(pixelX, pixelY int) (int, int) {
@@ -345,7 +345,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 				modalW := a.canvas.PrefModalBox[2]
 				modalH := a.canvas.PrefModalBox[3]
 				rowH := a.canvas.PrefModalBox[4]
-				headerH := 36
+				headerH := render.PreferencesHeaderHeight
 				if a.activeTheme.ID == "minecraft" {
 					headerH = 40
 				}
@@ -847,92 +847,92 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 			a.triggerRedraw()
 		default:
 			if len(data) > 0 {
-			if len(data) == 1 && data[0] == 0x03 && activeTerm.HasSelection() {
-				a.win.SetClipboard(activeTerm.GetSelectedText())
-				activeTerm.ClearSelection()
-				a.triggerRedraw()
-			} else if len(data) == 1 && data[0] == 0x16 && !activeTerm.IsAlt() {
-				a.win.Paste()
-			} else {
-				if a.activeGhostText != "" && !activeTerm.IsAlt() {
-					isAcceptKey := (keysym == 0xff53) || (keysym == 0xff09 && (e.State&platform.ModShift) == 0)
-					if isAcceptKey {
-						if len(a.currentInputBuffer) > 0 && a.currentInputBuffer[len(a.currentInputBuffer)-1] == ' ' && !strings.HasSuffix(a.currentInputBuffer, "\\ ") {
-							if runtime.GOOS != "windows" {
-								_, _ = activePTY.Write([]byte{0x08, '\\', ' '})
-								a.currentInputBuffer = a.currentInputBuffer[:len(a.currentInputBuffer)-1] + "\\ "
-							}
-						}
-						toWrite := []byte(a.activeGhostText)
-						_, _ = activePTY.Write(toWrite)
-						a.currentInputBuffer += a.activeGhostText
-						a.activeGhostText = ""
-						activeTerm.ClearSelection()
-						activeTerm.ResetScroll()
-						a.triggerRedraw()
-						return false
-					}
-				}
-
-				if !activeTerm.IsAlt() {
-					if !activePTY.IsForegroundShell() || a.isPasswordPrompt(activeTerm) {
-						a.currentInputBuffer = ""
-						a.activeGhostText = ""
-						a.activeDiag = nil
-					} else {
-						isAlt := (e.State & platform.ModAlt) != 0
-						if isAlt && (keysym == 0xff0d || keysym == 0xff8d) && a.activeDiag != nil {
-							diag := diagnostics.Analyze(strings.TrimSpace(a.currentInputBuffer))
-							if diag != nil && diag.QuickFix != "" {
-								_, _ = activePTY.Write([]byte{0x15})
-								_, _ = activePTY.Write([]byte(diag.QuickFix))
-								a.currentInputBuffer = diag.QuickFix
-								a.updateGhostText()
-								a.updateDiagnostics()
-								activeTerm.ClearSelection()
-								activeTerm.ResetScroll()
-								a.triggerRedraw()
-								return false
-							}
-						}
-
-						if keysym == 0xff0d || keysym == 0xff8d {
-							trimmedCmd := strings.TrimSpace(a.currentInputBuffer)
-							if len(trimmedCmd) >= 2 {
-								a.suggestEngine.Add(trimmedCmd)
-								if strings.HasPrefix(trimmedCmd, "alias ") || strings.HasPrefix(trimmedCmd, "abbr ") {
-									diagnostics.RegisterAliasFromLine(trimmedCmd)
+				if len(data) == 1 && data[0] == 0x03 && activeTerm.HasSelection() {
+					a.win.SetClipboard(activeTerm.GetSelectedText())
+					activeTerm.ClearSelection()
+					a.triggerRedraw()
+				} else if len(data) == 1 && data[0] == 0x16 && !activeTerm.IsAlt() {
+					a.win.Paste()
+				} else {
+					if a.activeGhostText != "" && !activeTerm.IsAlt() {
+						isAcceptKey := (keysym == 0xff53) || (keysym == 0xff09 && (e.State&platform.ModShift) == 0)
+						if isAcceptKey {
+							if len(a.currentInputBuffer) > 0 && a.currentInputBuffer[len(a.currentInputBuffer)-1] == ' ' && !strings.HasSuffix(a.currentInputBuffer, "\\ ") {
+								if runtime.GOOS != "windows" {
+									_, _ = activePTY.Write([]byte{0x08, '\\', ' '})
+									a.currentInputBuffer = a.currentInputBuffer[:len(a.currentInputBuffer)-1] + "\\ "
 								}
 							}
+							toWrite := []byte(a.activeGhostText)
+							_, _ = activePTY.Write(toWrite)
+							a.currentInputBuffer += a.activeGhostText
+							a.activeGhostText = ""
+							activeTerm.ClearSelection()
+							activeTerm.ResetScroll()
+							a.triggerRedraw()
+							return false
+						}
+					}
+
+					if !activeTerm.IsAlt() {
+						if !activePTY.IsForegroundShell() || a.isPasswordPrompt(activeTerm) {
 							a.currentInputBuffer = ""
 							a.activeGhostText = ""
 							a.activeDiag = nil
-						} else if keysym == 0xff08 {
-							if len(a.currentInputBuffer) > 0 {
-								_, size := utf8.DecodeLastRuneInString(a.currentInputBuffer)
-								a.currentInputBuffer = a.currentInputBuffer[:len(a.currentInputBuffer)-size]
+						} else {
+							isAlt := (e.State & platform.ModAlt) != 0
+							if isAlt && (keysym == 0xff0d || keysym == 0xff8d) && a.activeDiag != nil {
+								diag := diagnostics.Analyze(strings.TrimSpace(a.currentInputBuffer))
+								if diag != nil && diag.QuickFix != "" {
+									_, _ = activePTY.Write([]byte{0x15})
+									_, _ = activePTY.Write([]byte(diag.QuickFix))
+									a.currentInputBuffer = diag.QuickFix
+									a.updateGhostText()
+									a.updateDiagnostics()
+									activeTerm.ClearSelection()
+									activeTerm.ResetScroll()
+									a.triggerRedraw()
+									return false
+								}
+							}
+
+							if keysym == 0xff0d || keysym == 0xff8d {
+								trimmedCmd := strings.TrimSpace(a.currentInputBuffer)
+								if len(trimmedCmd) >= 2 {
+									a.suggestEngine.Add(trimmedCmd)
+									if strings.HasPrefix(trimmedCmd, "alias ") || strings.HasPrefix(trimmedCmd, "abbr ") {
+										diagnostics.RegisterAliasFromLine(trimmedCmd)
+									}
+								}
+								a.currentInputBuffer = ""
+								a.activeGhostText = ""
+								a.activeDiag = nil
+							} else if keysym == 0xff08 {
+								if len(a.currentInputBuffer) > 0 {
+									_, size := utf8.DecodeLastRuneInString(a.currentInputBuffer)
+									a.currentInputBuffer = a.currentInputBuffer[:len(a.currentInputBuffer)-size]
+									a.updateGhostText()
+									a.updateDiagnostics()
+								}
+							} else if keysym == 0xff1b || (len(data) == 1 && (data[0] == 0x03 || data[0] == 0x15)) {
+								a.currentInputBuffer = ""
+								a.activeGhostText = ""
+								a.activeDiag = nil
+							} else if len(data) > 0 && data[0] >= 32 && data[0] != 127 {
+								a.currentInputBuffer += data
 								a.updateGhostText()
 								a.updateDiagnostics()
 							}
-						} else if keysym == 0xff1b || (len(data) == 1 && (data[0] == 0x03 || data[0] == 0x15)) {
-							a.currentInputBuffer = ""
-							a.activeGhostText = ""
-							a.activeDiag = nil
-						} else if len(data) > 0 && data[0] >= 32 && data[0] != 127 {
-							a.currentInputBuffer += data
-							a.updateGhostText()
-							a.updateDiagnostics()
 						}
 					}
-				}
 
-				activeTerm.ClearSelection()
-				_, _ = activePTY.Write([]byte(data))
-				activeTerm.ResetScroll()
-				a.triggerRedraw()
+					activeTerm.ClearSelection()
+					_, _ = activePTY.Write([]byte(data))
+					activeTerm.ResetScroll()
+					a.triggerRedraw()
+				}
 			}
 		}
-	}
 
 	case platform.PasteNotifyEvent:
 		if len(e.Text) > 0 {

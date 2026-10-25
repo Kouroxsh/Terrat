@@ -225,9 +225,9 @@ export const ThemePreview: React.FC = () => {
                 </div>
 
                 <div className="pl-2 space-y-0.5 text-[11px]">
-                  <div style={{ color: selectedTheme.colors ? selectedTheme.colors[2] : '#9ece6a' }}>&nbsp;M pkg/render/font.go</div>
-                  <div style={{ color: selectedTheme.colors ? selectedTheme.colors[2] : '#9ece6a' }}>&nbsp;M pkg/terminal/tab.go</div>
-                  <div style={{ color: selectedTheme.colors ? selectedTheme.colors[0] : '#f7768e' }}>?? pkg/terminal/search.go</div>
+                  <div style={{ color: selectedTheme.colors ? selectedTheme.colors[2] : '#9ece6a' }}>&nbsp;M internal/render/font.go</div>
+                  <div style={{ color: selectedTheme.colors ? selectedTheme.colors[2] : '#9ece6a' }}>&nbsp;M internal/terminal/terminal.go</div>
+                  <div style={{ color: selectedTheme.colors ? selectedTheme.colors[2] : '#9ece6a' }}>&nbsp;M internal/app/modals.go</div>
                 </div>
 
                 <div className="flex items-center gap-2 pt-2">
@@ -235,7 +235,7 @@ export const ThemePreview: React.FC = () => {
                   <span className="opacity-50">:</span>
                   <span style={{ color: selectedTheme.accent }}>~/terrat</span>
                   <span className="opacity-50">$</span>
-                  <span>go test -v ./pkg/terminal</span>
+                  <span>go test ./internal/terminal</span>
                 </div>
 
                 <div className="pl-2 space-y-0.5 text-[11px]">
@@ -246,7 +246,7 @@ export const ThemePreview: React.FC = () => {
                   <div>=== RUN   TestSearchBuffer</div>
                   <div style={{ color: selectedTheme.colors ? selectedTheme.colors[2] : '#9ece6a' }}>--- PASS: TestSearchBuffer (0.00s)</div>
                   <div style={{ color: selectedTheme.colors ? selectedTheme.colors[2] : '#9ece6a' }} className="font-bold">PASS</div>
-                  <div className="opacity-75">ok&nbsp;&nbsp;github.com/vixland4509/Terrat/pkg/terminal&nbsp;&nbsp;0.012s</div>
+                  <div className="opacity-75">ok&nbsp;&nbsp;github.com/Kouroxsh/Terrat/internal/terminal&nbsp;&nbsp;0.012s</div>
                 </div>
 
                 {/* ANSI color swatches */}

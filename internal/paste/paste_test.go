@@ -58,13 +58,13 @@ func TestSanitizeControlCharacters(t *testing.T) {
 	}
 }
 
-func TestSanitizePersianZWNJ(t *testing.T) {
-	persianText := "می\u200Cشود خانه\u200Cها"
-	res := Sanitize(persianText)
-	if res.Sanitized != persianText {
-		t.Fatalf("expected Persian ZWNJ to be preserved, got %q", res.Sanitized)
+func TestSanitizeZeroWidthNonJoiner(t *testing.T) {
+	unicodeText := "a\u200Cb"
+	res := Sanitize(unicodeText)
+	if res.Sanitized != unicodeText {
+		t.Fatalf("expected zero-width non-joiner to be preserved, got %q", res.Sanitized)
 	}
 	if len(res.Warnings) != 0 {
-		t.Fatalf("expected no warnings for Persian ZWNJ, got %v", res.Warnings)
+		t.Fatalf("expected no warnings for zero-width non-joiner, got %v", res.Warnings)
 	}
 }

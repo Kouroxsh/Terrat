@@ -110,9 +110,9 @@ func (kh *KeyHandler) initXKB(X *xgb.Conn) {
 	reqSelect[1] = 1 // X_kbSelectEvents
 	xgb.Put16(reqSelect[2:], 4)
 	xgb.Put16(reqSelect[4:], 0x0100) // XkbUseCoreKbd
-	xgb.Put16(reqSelect[6:], 0x0010) // affectWhich: XkbStateNotify (1<<4)
+	xgb.Put16(reqSelect[6:], 0x0004) // affectWhich: XkbStateNotify (1<<2)
 	xgb.Put16(reqSelect[8:], 0)
-	xgb.Put16(reqSelect[10:], 0x0010) // selectAll: XkbStateNotify (1<<4)
+	xgb.Put16(reqSelect[10:], 0x0004) // selectAll: XkbStateNotify (1<<2)
 
 	cookieSelect := X.NewCookie(false, false)
 	X.NewRequest(reqSelect, cookieSelect)
@@ -144,10 +144,6 @@ func (kh *KeyHandler) RefreshXKBState(X *xgb.Conn) {
 
 func (kh *KeyHandler) SetGroup(group byte) {
 	kh.activeGroup = group & 3
-}
-
-func (kh *KeyHandler) ActiveGroup() byte {
-	return kh.activeGroup
 }
 
 func (kh *KeyHandler) KeySym(ev xproto.KeyPressEvent) xproto.Keysym {
@@ -571,22 +567,6 @@ func KeysymToRune(keysym xproto.Keysym) (rune, bool) {
 		}
 	}
 
-	// Standard X11 Arabic / Persian keysyms (0x05ac - 0x05fa)
-	if keysym >= 0x05ac && keysym <= 0x05fa {
-		switch keysym {
-		case 0x05ac:
-			return '\u060C', true // Arabic comma
-		case 0x05bb:
-			return '\u061B', true // Arabic semicolon
-		case 0x05bf:
-			return '\u061F', true // Arabic question mark
-		default:
-			if keysym >= 0x05c1 && keysym <= 0x05fa {
-				return rune(0x0621 + (keysym - 0x05c1)), true
-			}
-		}
-	}
-
 	// Standard X11 Cyrillic keysyms (0x06a0 - 0x06ff)
 	if keysym >= 0x06a0 && keysym <= 0x06ff {
 		return rune(0x0400 + (keysym - 0x06a0)), true
@@ -598,7 +578,7 @@ func KeysymToRune(keysym xproto.Keysym) (rune, bool) {
 	}
 
 	// Unicode in standard range >= 0x0100 (excluding standard X11 special function keys 0xff00-0xffff)
-	// Modern XKB layouts (including Persian, Arabic, Cyrillic) often map directly to Unicode codepoints
+	// Modern XKB layouts (including Cyrillic and Greek) often map directly to Unicode codepoints
 	if keysym >= 0x0100 && keysym <= 0x10ffff && (keysym < 0xff00 || keysym > 0xffff) {
 		return rune(keysym), true
 	}

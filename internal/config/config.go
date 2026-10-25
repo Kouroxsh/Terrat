@@ -7,15 +7,15 @@ import (
 )
 
 type Config struct {
-	Shell                 string  `json:"shell"`
-	DefaultShell          string  `json:"default_shell,omitempty"`
-	Theme                 string  `json:"theme"`
-	FontSize              float64 `json:"font_size"`
-	Opacity               float64 `json:"opacity"`
-	GhostText             bool    `json:"ghost_text"`
-	Diagnostics           bool    `json:"diagnostics"`
-	SanitizePaste         bool    `json:"sanitize_paste"`
-	BracketedPaste        bool    `json:"bracketed_paste"`
+	Shell          string  `json:"shell"`
+	DefaultShell   string  `json:"default_shell,omitempty"`
+	Theme          string  `json:"theme"`
+	FontSize       float64 `json:"font_size"`
+	Opacity        float64 `json:"opacity"`
+	GhostText      bool    `json:"ghost_text"`
+	Diagnostics    bool    `json:"diagnostics"`
+	SanitizePaste  bool    `json:"sanitize_paste"`
+	BracketedPaste bool    `json:"bracketed_paste"`
 }
 
 func DefaultConfig() *Config {
@@ -32,24 +32,31 @@ func DefaultConfig() *Config {
 }
 
 func ConfigPath() (string, error) {
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "terrat", "config.json"), nil
-	}
-	if exe, err := os.Executable(); err == nil {
-		portableCfg := filepath.Join(filepath.Dir(exe), "config.json")
+	exe, _ := os.Executable()
+	configDir, _ := os.UserConfigDir()
+	return configPath(exe, os.Getenv("XDG_CONFIG_HOME"), configDir)
+}
+
+func configPath(executable, xdgConfigHome, userConfigDir string) (string, error) {
+	// A config beside the executable marks a portable installation and takes
+	// precedence over the per-user location, including XDG_CONFIG_HOME.
+	if executable != "" {
+		portableCfg := filepath.Join(filepath.Dir(executable), "config.json")
 		if _, err := os.Stat(portableCfg); err == nil {
 			return portableCfg, nil
 		}
 	}
-	configDir, err := os.UserConfigDir()
-	if err != nil {
+	if xdgConfigHome != "" {
+		return filepath.Join(xdgConfigHome, "terrat", "config.json"), nil
+	}
+	if userConfigDir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", err
 		}
-		configDir = filepath.Join(home, ".config")
+		userConfigDir = filepath.Join(home, ".config")
 	}
-	return filepath.Join(configDir, "terrat", "config.json"), nil
+	return filepath.Join(userConfigDir, "terrat", "config.json"), nil
 }
 
 func Load() *Config {

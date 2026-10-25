@@ -337,4 +337,36 @@ func TestCursorNextPrevLine(t *testing.T) {
 	}
 }
 
-
+func TestRecycledScrollbackRowsRemainIndependent(t *testing.T) {
+	term := New(16, 4)
+	term.maxHistory = 7
+	for i := 0; i < 1000; i++ {
+		term.Write([]byte(fmt.Sprintf("line %04d\r\n", i)))
+	}
+	if len(term.scrollback) != 7 {
+		t.Fatalf("history length = %d", len(term.scrollback))
+	}
+	for y, row := range term.scrollback {
+		var text strings.Builder
+		for _, cell := range row {
+			text.WriteRune(cell.Char)
+		}
+		want := fmt.Sprintf("line %04d", 990+y)
+		if strings.TrimSpace(text.String()) != want {
+			t.Fatalf("history row %d = %q, want %q", y, text.String(), want)
+		}
+		for _, visible := range term.lines {
+			if &row[0] == &visible[0] {
+				t.Fatal("history aliases a visible row")
+			}
+		}
+	}
+	allocations := testing.AllocsPerRun(100, func() { term.scrollUp(1) })
+	if allocations != 0 {
+		t.Fatalf("steady-state scroll allocates: %f", allocations)
+	}
+	term.Write([]byte("\x1b[3J"))
+	if term.scrollback != nil || term.historyStore != nil {
+		t.Fatal("clearing history retains row storage")
+	}
+}

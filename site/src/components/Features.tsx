@@ -6,8 +6,8 @@ export const Features: React.FC = () => {
     {
       num: '01',
       title: 'Inline Ghost Text & Paths',
-      subtitle: 'Fish-Like Cross-Platform Completion',
-      desc: 'Real-time completion hints drawn dynamically in front of the cursor. Ingests Linux histories (~/.bash_history, ~/.zsh_history) and Windows PowerShell PSReadLine (ConsoleHost_history.txt). Intelligently auto-completes file paths with / and \\, escapes, and quotes.',
+      subtitle: 'Suggestions from shell history',
+      desc: 'Shows a completion hint as you type, using Linux Bash or Zsh history and Windows PowerShell history. It can also complete paths with either slash style, including quoted or escaped paths.',
       shortcut: 'Tab / Right Arrow',
       icon: Sparkles,
       color: '#7dcfff',
@@ -15,8 +15,8 @@ export const Features: React.FC = () => {
     {
       num: '02',
       title: 'Live Diagnostics & Linting',
-      subtitle: 'Lexer-Based Error Detection & QuickFix',
-      desc: 'Understands common typos (gti, dokcer, sl, git puch), unclosed quotes, chained operators (&&, ||, ;, |), and missing privileges. Shows guidance in the header and lets you auto-correct instantly with Alt+Enter.',
+      subtitle: 'Command hints and fixes',
+      desc: 'Flags unknown commands, unclosed quotes, chained operators (&&, ||, ;, |), and commands that may need elevated privileges. Shows a suggestion near the prompt; Alt+Enter applies the available fix.',
       shortcut: 'Alt + Enter (QuickFix) / Ctrl+Shift+D',
       icon: AlertCircle,
       color: '#e0af68',
@@ -24,17 +24,17 @@ export const Features: React.FC = () => {
     {
       num: '03',
       title: 'Isolated Multi-Tabs',
-      subtitle: 'Zero-Leak Concurrency & PTY Sessions',
-      desc: 'Each tab allocates an independent pseudo-terminal session (/dev/ptmx on Linux, ConPTY on Windows) with dedicated I/O pumps bound to context.Context cancellation to eliminate goroutine leaks. Shell processes are fully isolated.',
+      subtitle: 'Separate PTY Sessions',
+      desc: 'Each tab runs a separate pseudo-terminal session (/dev/ptmx on Linux, ConPTY on Windows) with its own terminal state.',
       shortcut: 'Ctrl+Shift+T / Ctrl+Tab / Alt+1..9',
       icon: Layers,
       color: '#7aa2f7',
     },
     {
       num: '04',
-      title: 'Live Font Scaling & Shaping',
-      subtitle: 'Dynamic Rasterization & Unicode Fallback',
-      desc: 'Adjust font size dynamically without restarting. TrueType glyphs are rendered into memory alpha masks in sub-millisecond time with automatic PTY reflow (SIGWINCH / ConPTY resize). Features comprehensive fallback with Persian/Arabic shaping.',
+      title: 'Live Font Scaling',
+      subtitle: 'Cached Glyphs & Unicode Fallback',
+      desc: 'Adjust font size without restarting. Glyphs are rasterized into cached in-memory masks, and the PTY is resized to match the new font. Includes system-font fallback and box-drawing support.',
       shortcut: 'Ctrl+= / Ctrl+- / Ctrl+0 / Ctrl+Wheel',
       icon: ZoomIn,
       color: '#9ece6a',
@@ -42,8 +42,8 @@ export const Features: React.FC = () => {
     {
       num: '05',
       title: 'In-Buffer Search',
-      subtitle: 'Live Scrollback Matching',
-      desc: 'Floating find bar searches through active screen rows and scrollback history. Highlights all matches with distinct active match indicators. Navigate forward and backward with Enter and Shift+Enter.',
+      subtitle: 'Search terminal rows',
+      desc: 'A floating find bar searches terminal rows and highlights matches. Use Enter and Shift+Enter to move between results.',
       shortcut: 'Ctrl+Shift+F / Enter / Shift+Enter',
       icon: Search,
       color: '#e0af68',
@@ -60,8 +60,8 @@ export const Features: React.FC = () => {
     {
       num: '07',
       title: 'Window Styling & Opacity',
-      subtitle: 'Hardware-Accelerated Compositing',
-      desc: 'Communicates directly with your window manager and compositor (Linux EWMH _NET_WM_WINDOW_OPACITY & Windows DWM). Tear-free double-buffering completely eliminates screen tearing and resizing artifacts.',
+      subtitle: 'Native Window Integration',
+      desc: 'Uses platform window APIs and supports adjustable window opacity where the operating system and compositor allow it.',
       shortcut: 'Configured in config.json',
       icon: Eye,
       color: '#bb9af7',
@@ -70,7 +70,7 @@ export const Features: React.FC = () => {
       num: '08',
       title: 'Hardened Clipboard & Safe Paste',
       subtitle: 'Anti-Pastejacking & Bracketed Paste',
-      desc: 'Smart Ctrl+C/Ctrl+V behavior. DECSET 2004 bracketed paste mode prevents unintentional execution in REPLs. Anti-pastejacking sanitizer strips malicious escapes and terminal controls while preserving valid Unicode like Persian ZWNJ.',
+      desc: 'Smart Ctrl+C/Ctrl+V behavior. DECSET 2004 bracketed paste mode prevents unintentional execution in REPLs. Anti-pastejacking sanitizer strips malicious escapes and terminal controls while preserving valid Unicode.',
       shortcut: 'Smart Ctrl+C / Ctrl+V / Bracketed Paste',
       icon: MousePointer,
       color: '#f7768e',
@@ -89,7 +89,7 @@ export const Features: React.FC = () => {
             Practical features for everyday terminal work.
           </h2>
           <p className="text-sm sm:text-base text-[#a9b1d6] max-w-2xl">
-            Built-in capabilities designed for Linux &amp; Windows workstations without requiring external multiplexers or heavy desktop frameworks.
+            Tabs, search, themes, and command helpers are built into the terminal.
           </p>
         </div>
 

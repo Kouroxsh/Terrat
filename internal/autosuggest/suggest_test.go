@@ -120,3 +120,34 @@ func TestAutosuggestWindowsPathSeparators(t *testing.T) {
 	}
 }
 
+func TestHistoryLoadingIsBoundedAndKeepsRecentUniqueCommands(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("APPDATA", home)
+	data := "old command\nbeta command\nalpha command\ngamma command\nalpha command\n"
+	if err := os.WriteFile(filepath.Join(home, ".bash_history"), []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".zsh_history"), []byte("other command\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{historyM: make(map[string]struct{}), maxItems: 3}
+	e.loadShellHistory()
+	want := []string{"alpha command", "gamma command", "beta command"}
+	if len(e.history) != len(want) || len(e.historyM) != len(want) {
+		t.Fatalf("history exceeded limit: %d/%d", len(e.history), len(e.historyM))
+	}
+	for i, cmd := range want {
+		if e.history[i] != cmd {
+			t.Fatalf("history[%d] = %q, want %q", i, e.history[i], cmd)
+		}
+	}
+	e.Add("new command")
+	if _, ok := e.historyM["beta command"]; ok {
+		t.Fatal("evicted command retained in map")
+	}
+	if len(e.history) != 3 || e.history[0] != "new command" {
+		t.Fatal("new command did not replace the oldest")
+	}
+}

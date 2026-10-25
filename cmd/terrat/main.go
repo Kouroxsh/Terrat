@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"terrat/internal/app"
-	"terrat/internal/config"
-	"terrat/internal/pty"
+	"github.com/Kouroxsh/Terrat/internal/app"
+	"github.com/Kouroxsh/Terrat/internal/config"
+	"github.com/Kouroxsh/Terrat/internal/pty"
 )
 
 const (

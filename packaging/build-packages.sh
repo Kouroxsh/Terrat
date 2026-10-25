@@ -35,8 +35,8 @@ section: "utils"
 priority: "optional"
 maintainer: "Nightland4509 <nightlandcompany@proton.me>"
 description: "Lightweight pure Go high-performance terminal emulator"
-homepage: "https://github.com/vixland4509/Terrat"
-license: "MIT"
+homepage: "https://github.com/Kouroxsh/Terrat"
+license: "GPL-3.0-only"
 contents:
   - src: ${BIN_SRC}
     dst: /usr/bin/terrat

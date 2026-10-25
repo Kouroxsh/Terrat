@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"terrat/internal/pty"
+	"github.com/Kouroxsh/Terrat/internal/pty"
 )
 
 func TestLeadingSemicolonCSI(t *testing.T) {

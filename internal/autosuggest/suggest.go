@@ -2,6 +2,7 @@ package autosuggest
 
 import (
 	"bufio"
+	"container/list"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -95,13 +96,17 @@ func (e *Engine) loadShellHistory() {
 	}
 
 	for _, hf := range historyFiles {
+		if len(e.history) >= e.maxItems {
+			break
+		}
 		file, err := os.Open(hf)
 		if err != nil {
 			continue
 		}
 
 		scanner := bufio.NewScanner(file)
-		var lines []string
+		lines := list.New()
+		entries := make(map[string]*list.Element)
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
 			if line == "" {
@@ -114,15 +119,24 @@ func (e *Engine) loadShellHistory() {
 				}
 			}
 			if len(line) >= 2 {
-				lines = append(lines, line)
+				if entry, ok := entries[line]; ok {
+					lines.MoveToBack(entry)
+					continue
+				}
+				if lines.Len() == e.maxItems {
+					oldest := lines.Front()
+					delete(entries, oldest.Value.(string))
+					lines.Remove(oldest)
+				}
+				entries[line] = lines.PushBack(line)
 			}
 		}
 		_ = scanner.Err()
 		_ = file.Close()
 
 		// Read in reverse (most recent commands first)
-		for i := len(lines) - 1; i >= 0; i-- {
-			e.addCommandInternal(lines[i])
+		for entry := lines.Back(); entry != nil; entry = entry.Prev() {
+			e.addCommandInternal(entry.Value.(string))
 			if len(e.history) >= e.maxItems {
 				break
 			}
@@ -132,7 +146,7 @@ func (e *Engine) loadShellHistory() {
 
 func (e *Engine) addCommandInternal(cmd string) {
 	cmd = strings.TrimSpace(cmd)
-	if cmd == "" || len(cmd) < 2 {
+	if len(cmd) < 2 || len(e.history) >= e.maxItems {
 		return
 	}
 	if _, exists := e.historyM[cmd]; exists {
@@ -152,24 +166,24 @@ func (e *Engine) Add(cmd string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	// Prioritize this command by placing it at the start
 	if _, exists := e.historyM[cmd]; exists {
 		for i, h := range e.history {
 			if h == cmd {
-				e.history = append(e.history[:i], e.history[i+1:]...)
-				break
+				copy(e.history[1:i+1], e.history[:i])
+				e.history[0] = cmd
+				return
 			}
 		}
-	} else {
-		e.historyM[cmd] = struct{}{}
-		if len(e.history) >= e.maxItems {
-			last := e.history[len(e.history)-1]
-			delete(e.historyM, last)
-			e.history = e.history[:len(e.history)-1]
-		}
 	}
-
-	e.history = append([]string{cmd}, e.history...)
+	if len(e.history) >= e.maxItems {
+		last := e.history[len(e.history)-1]
+		delete(e.historyM, last)
+		e.history = e.history[:len(e.history)-1]
+	}
+	e.historyM[cmd] = struct{}{}
+	e.history = append(e.history, "")
+	copy(e.history[1:], e.history[:len(e.history)-1])
+	e.history[0] = cmd
 }
 
 // Suggest returns the ghost suffix (continuation) for the given input prefix.
@@ -379,4 +393,3 @@ func suggestPath(input string, cwd string) string {
 
 	return ""
 }
-

@@ -23,9 +23,9 @@ func TestFindRowMatchesCaseInsensitive(t *testing.T) {
 }
 
 func TestFindRowMatchesUnicode(t *testing.T) {
-	// Multi-byte Persian text; rune indices must match grid columns.
-	row := "سلام دنیا سلام"
-	matches := FindRowMatches(row, "سلام")
+	// Multi-byte Unicode text; rune indices must match grid columns.
+	row := "你好世界 東南西北 你好世界"
+	matches := FindRowMatches(row, "你好世界")
 	if len(matches) != 2 {
 		t.Fatalf("expected 2 matches, got %d: %+v", len(matches), matches)
 	}
@@ -53,7 +53,7 @@ func TestFindRowMatchesEmptyQuery(t *testing.T) {
 
 func TestFindRowMatchesInTerminal(t *testing.T) {
 	term := New(80, 24)
-	_, err := term.Write([]byte("echo سلام دنیا\r\n"))
+	_, err := term.Write([]byte("echo 你好世界 دنیا\r\n"))
 	if err != nil {
 		t.Fatalf("write failed: %v", err)
 	}

@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"terrat/internal/pty"
-	"terrat/internal/terminal"
+	"github.com/Kouroxsh/Terrat/internal/pty"
+	"github.com/Kouroxsh/Terrat/internal/terminal"
 )
 
 type tabTitleMsg struct {
