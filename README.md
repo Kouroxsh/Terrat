@@ -254,4 +254,4 @@ GOOS=windows go build ./...
 
 ## License
 
-TerraTerminal is open source under the [GNU General Public License v3.0 (GPLv3)](LICENSE).
+TerraTerminal is open source under the [MIT License](LICENSE).

@@ -33,10 +33,10 @@ platform: "linux"
 version: "${VERSION}"
 section: "utils"
 priority: "optional"
-maintainer: "Nightland4509 <nightlandcompany@proton.me>"
+maintainer: "Kouroxsh <nightlandcompany@proton.me>"
 description: "Lightweight pure Go high-performance terminal emulator"
 homepage: "https://github.com/Kouroxsh/Terrat"
-license: "GPL-3.0-only"
+license: "MIT"
 contents:
   - src: ${BIN_SRC}
     dst: /usr/bin/terrat
