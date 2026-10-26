@@ -11,12 +11,12 @@ export const InstallSection: React.FC = () => {
   };
 
   const keybindings = [
-    { key: 'Tab / Right Arrow', desc: 'Accept Ghost Text suggestion' },
-    { key: 'Alt + Enter', desc: 'Apply Diagnostics QuickFix' },
-    { key: 'Ctrl + Shift + D', desc: 'Toggle Diagnostics On / Off' },
-    { key: 'Ctrl + Shift + T', desc: 'Spawn new tab' },
+    { key: 'Tab / Right Arrow', desc: 'Accept completion suggestion' },
+    { key: 'Alt + Enter', desc: 'Apply command suggestion' },
+    { key: 'Ctrl + Shift + D', desc: 'Toggle command diagnostics' },
+    { key: 'Ctrl + Shift + T', desc: 'Open a new tab' },
     { key: 'Ctrl + Shift + W', desc: 'Close active tab' },
-    { key: 'Ctrl + Tab', desc: 'Cycle to next tab' },
+    { key: 'Ctrl + Tab', desc: 'Switch to next tab' },
     { key: 'Alt + 1..9', desc: 'Jump to tab 1..9' },
     { key: 'Ctrl + Shift + F', desc: 'Toggle in-buffer search' },
     { key: 'Ctrl + = / - / 0', desc: 'Zoom font size in / out / reset' },
@@ -41,7 +41,7 @@ export const InstallSection: React.FC = () => {
             Install TerraTerminal.
           </h2>
           <p className="text-sm sm:text-base text-[#a9b1d6] max-w-2xl">
-            Terrat builds without CGO. Linux needs an X11 server or XWayland to open a window.
+            On Linux, Terrat needs an X11 server or XWayland. It builds without CGO.
           </p>
         </div>
 
@@ -52,7 +52,7 @@ export const InstallSection: React.FC = () => {
             <div>
               <div className="flex items-center justify-between mb-3">
                 <span className="font-mono text-xs text-[#7aa2f7] uppercase tracking-wider font-bold">
-                  Go Install (All OS)
+                  Go Install
                 </span>
                 <Terminal className="w-4 h-4 text-[#7aa2f7]" />
               </div>
@@ -85,7 +85,7 @@ export const InstallSection: React.FC = () => {
                 <Download className="w-4 h-4 text-[#9ece6a]" />
               </div>
               <p className="text-xs text-[#a9b1d6] mb-4">
-                Compiles binary, desktop launcher, and circular icon:
+                Builds the program and installs a desktop launcher and icon:
               </p>
               <div className="p-3 bg-[#13141c] border border-[#292e42] rounded-[2px] font-mono text-xs flex items-center justify-between gap-3">
                 <pre className="text-[#c0caf5] select-all leading-relaxed whitespace-pre font-mono text-[11px]">

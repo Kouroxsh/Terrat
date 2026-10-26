@@ -1,30 +1,30 @@
 import React from 'react';
-import { Layers, ZoomIn, Search, Link2, Eye, MousePointer, Sparkles, AlertCircle } from 'lucide-react';
+import { Layers, ZoomIn, Search, Link2, Eye, MousePointer, TextCursor, AlertCircle } from 'lucide-react';
 
 export const Features: React.FC = () => {
   const featureList = [
     {
       num: '01',
-      title: 'Inline Ghost Text & Paths',
-      subtitle: 'Suggestions from shell history',
+      title: 'Shell History and Path Suggestions',
+      subtitle: 'Completions as you type',
       desc: 'Shows a completion hint as you type, using Bash or Zsh history. It can also complete filesystem paths, including quoted or escaped paths.',
       shortcut: 'Tab / Right Arrow',
-      icon: Sparkles,
+      icon: TextCursor,
       color: '#7dcfff',
     },
     {
       num: '02',
-      title: 'Live Diagnostics & Linting',
-      subtitle: 'Command hints and fixes',
+      title: 'Command Diagnostics',
+      subtitle: 'Typos, quotes, and command syntax',
       desc: 'Flags unknown commands, unclosed quotes, chained operators (&&, ||, ;, |), and commands that may need elevated privileges. Shows a suggestion near the prompt; Alt+Enter applies the available fix.',
-      shortcut: 'Alt + Enter (QuickFix) / Ctrl+Shift+D',
+      shortcut: 'Alt + Enter / Ctrl+Shift+D',
       icon: AlertCircle,
       color: '#e0af68',
     },
     {
       num: '03',
-      title: 'Isolated Multi-Tabs',
-      subtitle: 'Separate PTY Sessions',
+      title: 'Tabs',
+      subtitle: 'Separate shell sessions',
       desc: 'Each tab runs a separate pseudo-terminal session (/dev/ptmx) with its own terminal state.',
       shortcut: 'Ctrl+Shift+T / Ctrl+Tab / Alt+1..9',
       icon: Layers,
@@ -32,8 +32,8 @@ export const Features: React.FC = () => {
     },
     {
       num: '04',
-      title: 'Live Font Scaling',
-      subtitle: 'Cached Glyphs & Unicode Fallback',
+      title: 'Font Size',
+      subtitle: 'Resize text without restarting',
       desc: 'Adjust font size without restarting. Glyphs are rasterized into cached in-memory masks, and the PTY is resized to match the new font. Includes system-font fallback and box-drawing support.',
       shortcut: 'Ctrl+= / Ctrl+- / Ctrl+0 / Ctrl+Wheel',
       icon: ZoomIn,
@@ -43,35 +43,35 @@ export const Features: React.FC = () => {
       num: '05',
       title: 'In-Buffer Search',
       subtitle: 'Search terminal rows',
-      desc: 'A floating find bar searches terminal rows and highlights matches. Use Enter and Shift+Enter to move between results.',
+      desc: 'Search the terminal buffer and highlight matches. Use Enter and Shift+Enter to move between results.',
       shortcut: 'Ctrl+Shift+F / Enter / Shift+Enter',
       icon: Search,
       color: '#e0af68',
     },
     {
       num: '06',
-      title: 'URL Detection & Launch',
-      subtitle: 'Async Browser Integration',
-      desc: 'Scans visible cells for web URLs and file paths. Holding Ctrl highlights the detected URL and changes the mouse cursor to a pointer. Ctrl+Click opens the URL asynchronously in your default browser.',
+      title: 'Open Links',
+      subtitle: 'Ctrl-click a URL',
+      desc: 'Hold Ctrl to highlight a URL under the pointer, then Ctrl-click to open it in your default browser.',
       shortcut: 'Ctrl + Hover / Ctrl + Left Click',
       icon: Link2,
       color: '#7aa2f7',
     },
     {
       num: '07',
-      title: 'Window Styling & Opacity',
-      subtitle: 'Native Window Integration',
-      desc: 'Uses platform window APIs and supports adjustable window opacity where the operating system and compositor allow it.',
+      title: 'Window Opacity',
+      subtitle: 'Depends on desktop compositor',
+      desc: 'Adjustable window opacity is available when supported by the desktop compositor.',
       shortcut: 'Configured in config.json',
       icon: Eye,
       color: '#bb9af7',
     },
     {
       num: '08',
-      title: 'Hardened Clipboard & Safe Paste',
-      subtitle: 'Anti-Pastejacking & Bracketed Paste',
-      desc: 'Smart Ctrl+C/Ctrl+V behavior. DECSET 2004 bracketed paste mode prevents unintentional execution in REPLs. Anti-pastejacking sanitizer strips malicious escapes and terminal controls while preserving valid Unicode.',
-      shortcut: 'Smart Ctrl+C / Ctrl+V / Bracketed Paste',
+      title: 'Clipboard and Paste',
+      subtitle: 'Selection, paste, and cleanup',
+      desc: 'Ctrl+C copies a selection or sends an interrupt. Bracketed paste is supported. Paste cleanup can remove terminal escape sequences and bidirectional override characters.',
+      shortcut: 'Ctrl + C / Ctrl + V',
       icon: MousePointer,
       color: '#f7768e',
     },
@@ -83,13 +83,13 @@ export const Features: React.FC = () => {
         {/* Section Header */}
         <div className="mb-14">
           <div className="font-mono text-xs text-[#7aa2f7] uppercase tracking-wider mb-2">
-            CORE FEATURES
+            IN THE TERMINAL
           </div>
           <h2 className="text-3xl sm:text-5xl font-bold tracking-tight text-white mb-3">
-            Practical features for everyday terminal work.
+            Tabs, search, and command suggestions.
           </h2>
           <p className="text-sm sm:text-base text-[#a9b1d6] max-w-2xl">
-            Tabs, search, themes, and command helpers are built into the terminal.
+            Tabs, search, themes, and suggestions for Bash and Zsh.
           </p>
         </div>
 

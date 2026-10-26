@@ -30,13 +30,13 @@ export const Architecture: React.FC = () => {
       <div className="max-w-7xl mx-auto px-6">
         <div className="max-w-3xl mb-14">
           <div className="font-mono text-xs text-[#7aa2f7] uppercase tracking-wider mb-2">
-            ARCHITECTURE &amp; DESIGN
+            IMPLEMENTATION
           </div>
           <h2 className="text-3xl sm:text-5xl font-bold tracking-tight text-white mb-4">
-            How Terrat works under the hood.
+            How it works
           </h2>
           <p className="text-sm sm:text-base text-[#a9b1d6] leading-relaxed">
-            Terrat uses X11 or XWayland directly. It builds without CGO and keeps rendering, terminal state, and shell sessions in one desktop application.
+            Terrat uses X11 or XWayland to draw its window. It builds without CGO; each tab has its own shell session and terminal state.
           </p>
         </div>
 

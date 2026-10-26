@@ -7,7 +7,7 @@
 <p align="center">
   <b>A terminal emulator for Linux, written in Go.</b>
   <br>
-  <i>Zero CGO &bull; Linux &bull; Single Binary &bull; v3.0.0</i>
+  <i>v3.0.0 &bull; X11 / XWayland &bull; No CGO required</i>
 </p>
 
 <p align="center">
@@ -29,68 +29,49 @@
 
 ## Overview
 
-TerraTerminal (`terrat`) is a desktop terminal emulator for Linux. It uses X11 or XWayland and builds without CGO. It includes tabs, configurable themes, font scaling, search, shell-history suggestions, and command diagnostics.
+TerraTerminal (`terrat`) runs on Linux with X11 or XWayland. It is written in Go and can be built without CGO.
 
-Each tab has its own terminal state and shell session. Rendering uses an in-memory canvas, while platform-specific code presents the window. See the benchmark results below for measurements on one Linux system; they describe selected operations, not whole-application memory use or startup time.
+It has tabs, text search, themes, and suggestions from shell history. Command diagnostics catch common typos as you type. Each tab keeps its own shell session and terminal state.
 
 ---
 
 ## Features
 
-### 1. Client-Side Window Frame (CSD) & Multi-Theme Controls
-- Integrated titlebar with 1px hairline boundary and live dimensions micro-HUD (e.g. `80x24`).
-- Clean right-aligned controls for Settings, Minimize, Maximize, and Close.
-- Full custom-themed titlebar button rendering (including retro block-art for the Minecraft theme).
-- 8-direction interactive border resizing with directional cursor morphing.
+### Window and tabs
 
-### 2. Isolated Multi-Tab Architecture
-- Each tab runs its own pseudo-terminal session (PTY) and terminal state.
-- Tab pills display live process names (`bash`, `nvim`, `htop`, etc.).
-- Intuitive mouse controls: switch tabs, close individual tabs via `×`, or spawn sessions with `+`.
-- Clean process exit handling: exiting the active shell terminates the tab; closing the final tab cleanly exits the application.
+The titlebar has settings, minimize, maximize, and close buttons. Drag any edge or corner to resize the window.
 
-### 3. Real-Time Font Scaling & Glyphs
-- Dynamic font scaling with `Ctrl+=` / `Ctrl+-` or `Ctrl + MouseWheel`.
-- In-memory glyph caching and system-font fallback.
-- Box-drawing support.
-- Persian/Arabic display is temporarily disabled; Arabic-script glyphs render as replacement characters. Right-to-left layout is unsupported.
-- Automatic PTY window recalculation with `SIGWINCH` propagation.
+Each tab runs a separate pseudo-terminal (PTY). Tabs show the running process name, such as `bash`, `nvim`, or `htop`. Open, close, and switch tabs from the tab bar or with the shortcuts below. Closing the last tab exits TerraTerminal.
 
-### 4. Interactive In-Buffer Search
-- Minimalist floating search bar toggled with `Ctrl+Shift+F`.
-- Live visual match highlighting:
-  - **All matches:** Warm amber glow.
-  - **Active match:** Vivid emerald highlight.
-- Real-time match counter with `Enter` (next) and `Shift+Enter` (previous) navigation.
+### Text and search
 
-### 5. Curated Themes & System Dark Mode
-- Preferences modal toggled via `Ctrl+,` or `Ctrl+Shift+P`.
-- Built-in color schemes:
-  - **Tokyo Night** (Dark)
-  - **Catppuccin Mocha** (Dark)
-  - **Minecraft** (Dark custom palette)
-  - **Tokyo Day** (Light)
-  - **Solarized Light** (shown as “Solarized” in Preferences; Light)
-  - **Auto** (Synchronizes with OS desktop theme via DBus / Desktop Portal)
+Change the font size with `Ctrl+=`, `Ctrl+-`, or `Ctrl + MouseWheel`. Glyphs are cached, with system fonts used as fallbacks. Box-drawing characters are supported. Resizing updates the PTY dimensions and notifies the running program with `SIGWINCH`.
 
-### 6. Live Command Diagnostics & Typo Linter
-- Integrated command parser supporting quotes, escapes, and chained operators (`&&`, `||`, `;`, `|`).
-- Detects unrecognized commands (`gti` &rarr; `git`, `sl` &rarr; `ls`, `mkae` &rarr; `make`), unknown subcommands (`git puch` &rarr; `git push`), unclosed quote strings, and commands requiring root privileges.
-- Intelligent path skipping for filesystem paths.
-- Press **`Alt + Enter`** to automatically apply the recommended QuickFix directly to the active prompt.
-- Press **`Ctrl + Shift + D`** to toggle diagnostics on and off.
+Press `Ctrl+Shift+F` to search the terminal buffer. Matches are highlighted; `Enter` and `Shift+Enter` move between them.
 
-### 7. Fish-Style Ghost Autocomplete & Path Suggestions
-- Subtle inline suggestions rendered directly ahead of the cursor.
-- Automatically reads Bash and Zsh shell histories from `~/.bash_history` and `~/.zsh_history`.
-- Intelligent path autocompletion supporting `/` separators, spaces with escapes, quoted tokens (`"..."` / `'...'`), and home directory expansion (`~`, `~/`).
-- Press **`Tab`** or **`Right Arrow`** to accept the suggestion.
+**Current limitation:** Persian and Arabic display is disabled. Arabic-script glyphs appear as replacement characters, and right-to-left layout is unsupported.
 
-### 8. Hardened Clipboard & Anti-Pastejacking
-- Block text selection with word (double-click) and row (triple-click) matching.
-- **Smart Ctrl+C / Ctrl+V:** `Ctrl+C` copies when text is selected or sends `SIGINT` when unselected. `Ctrl+V` pastes in normal shell mode while remaining transparent in fullscreen editors (`vim`, `nano`).
-- **Bracketed Paste (DECSET 2004):** Wraps pasted text in escape markers to prevent broken indentation in REPLs.
-- **Anti-Pastejacking Sanitization:** Strips malicious control codes, dangerous escapes, and bidirectional overrides while fully preserving legitimate Unicode format characters (`\u200C`).
+### Themes
+
+Open Preferences with `Ctrl+,` or `Ctrl+Shift+P` to choose a theme:
+
+- Tokyo Night, Catppuccin Mocha, and Minecraft are dark themes. Minecraft also changes the titlebar buttons to a block style.
+- Tokyo Day and Solarized Light are light themes. Solarized Light is listed as “Solarized” in Preferences.
+- Auto follows the desktop theme when detection is available.
+
+### Command suggestions
+
+Diagnostics check commands, subcommands, quotes, and separators (`&&`, `||`, `;`, `|`). They suggest corrections such as `gti` → `git` and `git puch` → `git push`, and can flag commands that may need elevated privileges. File paths are skipped by diagnostics.
+
+Press `Alt+Enter` to apply a correction. Toggle diagnostics with `Ctrl+Shift+D`.
+
+History suggestions come from `~/.bash_history` or `~/.zsh_history`. Path completion handles spaces, quoted paths, and `~`. Accept a history or path suggestion with `Tab` or `Right Arrow`.
+
+### Selection and paste
+
+Double-click to select a word; triple-click to select a line. `Ctrl+C` copies selected text. With no selection, it sends an interrupt. `Ctrl+V` pastes in the shell and in fullscreen editors such as `vim` and `nano`.
+
+Bracketed paste is available for programs that support it. Paste cleanup removes terminal escape sequences and bidirectional override characters when enabled. Other text, including the zero-width non-joiner (`U+200C`), is preserved.
 
 ---
 
@@ -116,9 +97,9 @@ Each tab has its own terminal state and shell session. Rendering uses an in-memo
 ### Diagnostics & Search
 | Shortcut | Action |
 | :--- | :--- |
-| `Alt + Enter` | Apply recommended Diagnostic QuickFix |
-| `Ctrl + Shift + D` | Toggle Live Command Diagnostics |
-| `Tab` / `Right Arrow` | Accept inline Ghost Text completion |
+| `Alt + Enter` | Apply a command suggestion |
+| `Ctrl + Shift + D` | Toggle command diagnostics |
+| `Tab` / `Right Arrow` | Accept the completion suggestion |
 | `Ctrl + Shift + F` | Toggle in-buffer search bar |
 | `Enter` / `Shift + Enter` | Next / previous search match |
 | `Esc` | Close search bar or preferences modal |
@@ -154,10 +135,10 @@ terrat [flags] [-e command [args...]]
 
 ### Examples
 ```bash
-# Launch with custom font size and theme
+# Set the font size and theme
 terrat -font-size 15 -theme catppuccin-mocha
 
-# Run a dedicated tool directly
+# Run a command instead of a shell
 terrat -e htop
 terrat -e nvim /path/to/file
 ```
@@ -166,7 +147,9 @@ terrat -e nvim /path/to/file
 
 ## Configuration
 
-Settings are saved automatically under the Linux user configuration directory in `terrat/config.json`. `XDG_CONFIG_HOME` is used when set (otherwise typically `~/.config`). If a `config.json` file is present beside the executable, that file takes precedence for portable installs:
+Settings are saved automatically to `$XDG_CONFIG_HOME/terrat/config.json`, usually `~/.config/terrat/config.json`. For a portable install, place `config.json` beside the executable; that file takes precedence over the user configuration.
+
+Default settings:
 
 ```json
 {
@@ -185,7 +168,7 @@ Settings are saved automatically under the Linux user configuration directory in
 
 ## Benchmarks
 
-These Go microbenchmarks were run five times on Linux/amd64 with Go 1.22.6 on an Intel Core i5-8500 CPU @ 3.00 GHz. Values below are the median of the five runs. Times are per benchmark operation.
+Results from five runs on Linux/amd64, using Go 1.22.6 and an Intel Core i5-8500 @ 3.00 GHz. Each row shows the median time per operation and its allocations.
 
 | Operation | Result | Allocations |
 | :--- | ---: | ---: |
@@ -198,7 +181,9 @@ These Go microbenchmarks were run five times on Linux/amd64 with Go 1.22.6 on an
 | Create and close the font engine | 1.96 ms | 677,434 B/op, 1,199 allocs/op |
 | Add an entry to shell history | 42.4 ns | 0 B/op, 0 allocs/op |
 
-The terminal-write benchmark sends a 128-line payload after warming the terminal. Rendering uses the CPU canvas and does not include X11 presentation, window composition, or shell startup. These figures are not whole-app latency or resident-memory measurements and describe Linux measurements only. To repeat them, run:
+The write benchmarks send 128 lines after warming up the terminal. The render benchmarks measure drawing to an in-memory CPU canvas; X11 presentation and window composition are excluded. These measurements do not cover shell startup, whole-app latency, or resident memory use.
+
+To run the benchmarks:
 
 ```bash
 go test ./internal/terminal ./internal/render ./internal/autosuggest -run '^$' -bench . -benchmem -benchtime=500ms -count=5
@@ -210,7 +195,7 @@ go test ./internal/terminal ./internal/render ./internal/autosuggest -run '^$' -
 
 ### Prerequisites
 - **Linux:** X11 server or Wayland via XWayland.
-- **Go 1.22+** (only required if compiling from source).
+- **Go 1.22.6+** (only required if compiling from source).
 
 ### Building from Source
 
@@ -219,17 +204,17 @@ go test ./internal/terminal ./internal/render ./internal/autosuggest -run '^$' -
 git clone https://github.com/Kouroxsh/Terrat.git
 cd Terrat
 
-# Linux: Compile optimized static binary
+# Build the binary
 make build
 
-# Linux: Optional install to ~/go/bin with desktop entry and icon
+# Install to ~/go/bin, with a desktop entry and icon
 make install
 
 # Build Linux release packages (.deb, .rpm, .pkg.tar.zst, .tar.gz) via nfpm
 make package
 ```
 
-Building packages requires `nfpm`; the packaging script attempts to install it with `go install` if it is not already available.
+Packaging requires `nfpm`. If it is missing, the script tries to install it with `go install`.
 
 ### Running Tests & Static Analysis
 
@@ -245,4 +230,4 @@ go vet ./...
 
 ## License
 
-TerraTerminal is open source under the [MIT License](LICENSE).
+[MIT](LICENSE).

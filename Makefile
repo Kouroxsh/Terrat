@@ -1,7 +1,6 @@
 BINARY=terrat
 VERSION?=3.0.0
 PREFIX?=$(HOME)/go/bin
-DESKTOP_DIR=$(HOME)/.local/share/applications
 
 .PHONY: all build run clean install release package package-linux site-build site-dev
 
@@ -13,25 +12,8 @@ build:
 run: build
 	./$(BINARY)
 
-ICON_DIR=$(HOME)/.local/share/icons/hicolor/512x512/apps
-
-install: build
-	mkdir -p $(PREFIX)
-	mkdir -p $(DESKTOP_DIR)
-	mkdir -p $(ICON_DIR)
-	install -m 755 $(BINARY) $(PREFIX)/$(BINARY)
-	cp assets/icon.png $(PREFIX)/icon.png
-	cp assets/icon.png $(ICON_DIR)/terraterminal.png
-	cp assets/icon.png $(ICON_DIR)/terrat.png
-	cp packaging/terrat.desktop $(DESKTOP_DIR)/terraterminal.desktop
-	cp packaging/terrat.desktop $(DESKTOP_DIR)/terrat.desktop
-	sed -i 's|Exec=.*|Exec=$(PREFIX)/$(BINARY)|g' $(DESKTOP_DIR)/terraterminal.desktop
-	sed -i 's|Icon=.*|Icon=$(ICON_DIR)/terraterminal.png|g' $(DESKTOP_DIR)/terraterminal.desktop
-	sed -i 's|Exec=.*|Exec=$(PREFIX)/$(BINARY)|g' $(DESKTOP_DIR)/terrat.desktop
-	sed -i 's|Icon=.*|Icon=$(ICON_DIR)/terrat.png|g' $(DESKTOP_DIR)/terrat.desktop
-	@command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database $(DESKTOP_DIR) || true
-	@command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -f -t $(HOME)/.local/share/icons/hicolor 2>/dev/null || true
-	@echo "TerraTerminal installed to $(PREFIX)/$(BINARY) with circular icon!"
+install:
+	@./packaging/install.sh "$(VERSION)" "$(PREFIX)" "$(BINARY)"
 
 clean:
 	rm -f $(BINARY)

@@ -94,7 +94,7 @@ export const ThemePreview: React.FC = () => {
             </h2>
           </div>
           <p className="font-mono text-xs text-[#565f89] max-w-md">
-            Full 24-bit TrueColor (16.7 million colors) support. Switch themes with <code>Ctrl+,</code> or configure via <code>config.json</code>.
+            Change the theme with <code>Ctrl+,</code> or set it in <code>config.json</code>.
           </p>
         </div>
 
@@ -103,7 +103,7 @@ export const ThemePreview: React.FC = () => {
           {/* Theme List */}
           <div className="lg:col-span-5 flex flex-col gap-3 font-mono text-xs">
             <div className="text-[#565f89] uppercase tracking-wider mb-1 text-[11px]">
-              Select Palette:
+              THEMES
             </div>
 
             {themes.map((th) => (
@@ -139,7 +139,7 @@ export const ThemePreview: React.FC = () => {
             <div className="p-3.5 bg-[#16161e] border border-[#292e42] rounded-[2px] flex items-start gap-3 text-xs text-[#a9b1d6]">
               <Monitor className="w-4 h-4 text-[#7aa2f7] shrink-0 mt-0.5" />
               <div>
-                <span className="font-bold text-white">System Appearance Sync:</span> Automatically follows FreeDesktop DBus dark/light mode preference across GNOME, KDE, and Sway.
+                <span className="font-bold text-white">Automatic theme:</span> Follows the desktop light or dark setting when it can be detected.
               </div>
             </div>
           </div>

@@ -34,7 +34,7 @@ version: "${VERSION}"
 section: "utils"
 priority: "optional"
 maintainer: "Kouroxsh <nightlandcompany@proton.me>"
-description: "Lightweight pure Go high-performance terminal emulator"
+description: "Linux terminal emulator written in Go"
 homepage: "https://github.com/Kouroxsh/Terrat"
 license: "MIT"
 contents:
