@@ -1,9 +1,9 @@
 BINARY=terrat
-VERSION?=0.2.5
+VERSION?=3.0.0
 PREFIX?=$(HOME)/go/bin
 DESKTOP_DIR=$(HOME)/.local/share/applications
 
-.PHONY: all build run clean install release package package-linux package-windows site-build site-dev
+.PHONY: all build run clean install release package package-linux site-build site-dev
 
 all: build
 

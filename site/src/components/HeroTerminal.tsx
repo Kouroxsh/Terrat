@@ -5,12 +5,12 @@ export const HeroTerminal: React.FC = () => (
     <div className="max-w-7xl mx-auto px-6">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-end mb-14">
         <div className="lg:col-span-8">
-          <p className="font-mono text-xs text-[#7aa2f7] uppercase tracking-wider mb-5">Linux · Windows · Go</p>
+          <p className="font-mono text-xs text-[#7aa2f7] uppercase tracking-wider mb-5">Linux · Go</p>
           <h1 className="text-4xl sm:text-6xl lg:text-7xl font-semibold tracking-tight text-white leading-[1.05] mb-6">
             A terminal built in Go.
           </h1>
           <p className="text-base sm:text-lg text-[#a9b1d6] max-w-2xl leading-relaxed">
-            TerraTerminal is a desktop terminal for Linux and Windows, with tabs, configurable themes, in-buffer search, and shell history suggestions.
+            TerraTerminal is a desktop terminal for Linux, with tabs, configurable themes, in-buffer search, and shell history suggestions.
           </p>
         </div>
         <div className="lg:col-span-4 flex flex-col gap-3 font-mono text-xs">

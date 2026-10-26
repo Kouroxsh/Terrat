@@ -5,7 +5,6 @@ import (
 	"container/list"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 )
@@ -88,11 +87,6 @@ func (e *Engine) loadShellHistory() {
 	historyFiles := []string{
 		filepath.Join(home, ".bash_history"),
 		filepath.Join(home, ".zsh_history"),
-	}
-	if appData := os.Getenv("APPDATA"); appData != "" {
-		historyFiles = append(historyFiles, filepath.Join(appData, "Microsoft", "Windows", "PowerShell", "PSReadLine", "ConsoleHost_history.txt"))
-	} else {
-		historyFiles = append(historyFiles, filepath.Join(home, "AppData", "Roaming", "Microsoft", "Windows", "PowerShell", "PSReadLine", "ConsoleHost_history.txt"))
 	}
 
 	for _, hf := range historyFiles {
@@ -289,8 +283,8 @@ func suggestPath(input string, cwd string) string {
 	}
 	pathToSearch := unescapedToken.String()
 
-	// Split directory and base (handling both / and \)
-	normPath := strings.ReplaceAll(pathToSearch, "\\", "/")
+	// Split directory and base using Linux path separators.
+	normPath := pathToSearch
 	dirPart := filepath.Dir(normPath)
 	basePart := filepath.Base(normPath)
 
@@ -306,15 +300,15 @@ func suggestPath(input string, cwd string) string {
 			searchDir = home
 			basePart = ""
 		}
-	} else if (strings.HasPrefix(pathToSearch, "~/") || strings.HasPrefix(pathToSearch, "~\\")) && len(pathToSearch) > 2 {
+	} else if strings.HasPrefix(pathToSearch, "~/") && len(pathToSearch) > 2 {
 		if home, err := os.UserHomeDir(); err == nil && home != "" {
-			rem := strings.ReplaceAll(pathToSearch[2:], "\\", "/")
+			rem := pathToSearch[2:]
 			d := filepath.Dir(rem)
 			b := filepath.Base(rem)
 			searchDir = filepath.Join(home, filepath.FromSlash(d))
 			basePart = b
 		}
-	} else if strings.Contains(pathToSearch, "/") || strings.Contains(pathToSearch, "\\") {
+	} else if strings.Contains(pathToSearch, "/") {
 		searchDir = filepath.Join(cwd, filepath.FromSlash(dirPart))
 	} else {
 		searchDir = cwd
@@ -337,9 +331,6 @@ func suggestPath(input string, cwd string) string {
 		if len(basePart) > 0 && strings.HasPrefix(strings.ToLower(name), lowerBase) && len(name) >= len(basePart) {
 			suffix := name[len(basePart):]
 			dirSep := "/"
-			if strings.Contains(pathToSearch, "\\") {
-				dirSep = "\\"
-			}
 			if entry.IsDir() {
 				suffix += dirSep
 			}
@@ -352,9 +343,7 @@ func suggestPath(input string, cwd string) string {
 			}
 
 			// In unquoted mode on Unix, spaces in suffix must be escaped
-			if runtime.GOOS != "windows" {
-				suffix = strings.ReplaceAll(suffix, " ", "\\ ")
-			}
+			suffix = strings.ReplaceAll(suffix, " ", "\\ ")
 			return suffix
 		}
 	}
@@ -376,15 +365,10 @@ func suggestPath(input string, cwd string) string {
 				if strings.HasPrefix(strings.ToLower(name), targetPrefix) {
 					suffix := name[len(targetPrefix):]
 					dirSep := "/"
-					if strings.Contains(input, "\\") {
-						dirSep = "\\"
-					}
 					if entry.IsDir() {
 						suffix += dirSep
 					}
-					if runtime.GOOS != "windows" {
-						suffix = strings.ReplaceAll(suffix, " ", "\\ ")
-					}
+					suffix = strings.ReplaceAll(suffix, " ", "\\ ")
 					return suffix
 				}
 			}

@@ -101,13 +101,13 @@ func TestConfigShellAndDefaultShell(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	shellData := []byte(`{"shell": "C:\\Program Files\\Git\\bin\\bash.exe"}`)
+	shellData := []byte(`{"shell": "/usr/bin/bash"}`)
 	if err := os.WriteFile(cfgPath, shellData, 0644); err != nil {
 		t.Fatal(err)
 	}
 	cfg := Load()
-	if cfg.Shell != `C:\Program Files\Git\bin\bash.exe` {
-		t.Fatalf("expected Shell to be 'C:\\Program Files\\Git\\bin\\bash.exe', got %q", cfg.Shell)
+	if cfg.Shell != "/usr/bin/bash" {
+		t.Fatalf("expected Shell to be '/usr/bin/bash', got %q", cfg.Shell)
 	}
 
 	defaultShellData := []byte(`{"default_shell": "bash"}`)

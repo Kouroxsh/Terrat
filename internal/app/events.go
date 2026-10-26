@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"os"
-	"runtime"
 	"strings"
 	"time"
 	"unicode"
@@ -858,10 +857,8 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 						isAcceptKey := (keysym == 0xff53) || (keysym == 0xff09 && (e.State&platform.ModShift) == 0)
 						if isAcceptKey {
 							if len(a.currentInputBuffer) > 0 && a.currentInputBuffer[len(a.currentInputBuffer)-1] == ' ' && !strings.HasSuffix(a.currentInputBuffer, "\\ ") {
-								if runtime.GOOS != "windows" {
-									_, _ = activePTY.Write([]byte{0x08, '\\', ' '})
-									a.currentInputBuffer = a.currentInputBuffer[:len(a.currentInputBuffer)-1] + "\\ "
-								}
+								_, _ = activePTY.Write([]byte{0x08, '\\', ' '})
+								a.currentInputBuffer = a.currentInputBuffer[:len(a.currentInputBuffer)-1] + "\\ "
 							}
 							toWrite := []byte(a.activeGhostText)
 							_, _ = activePTY.Write(toWrite)

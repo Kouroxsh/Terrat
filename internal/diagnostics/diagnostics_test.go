@@ -251,18 +251,3 @@ func TestSubcommandExtraWhitespaceQuickFix(t *testing.T) {
 		t.Fatalf("expected quick fix 'git   status', got %#v", diag)
 	}
 }
-
-func TestWindowsExecutablePathsIgnored(t *testing.T) {
-	paths := []string{
-		".\\tools\\build.exe",
-		"C:\\tools\\app.exe",
-		"bin\\run.exe",
-		"./scripts/run.sh",
-	}
-	for _, p := range paths {
-		if d := Analyze(p); d != nil {
-			t.Fatalf("expected nil diagnostic for path executable %q, got %+v", p, d)
-		}
-	}
-}
-

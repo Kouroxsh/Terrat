@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 	"sync"
 )
@@ -75,7 +74,7 @@ var commonBaseCommands = []string{
 	"less", "ln", "ls",
 	"make", "man", "mkdir", "mv",
 	"nano", "nc", "netstat", "npm", "nvim",
-	"ping", "pkill", "powershell", "ps", "pwd", "pnpm", "pwsh", "python", "python3",
+	"ping", "pkill", "ps", "pwd", "pnpm", "python", "python3",
 	"rm", "rmdir",
 	"sed", "ssh", "sudo", "systemctl",
 	"tail", "tar", "top", "touch", "tree",
@@ -166,21 +165,21 @@ var npmSubcommands = []string{
 }
 
 var privilegedCommands = map[string]string{
-	"apt":        "sudo apt",
-	"apt-get":    "sudo apt-get",
-	"pacman":     "sudo pacman",
-	"dnf":        "sudo dnf",
-	"yum":        "sudo yum",
-	"reboot":     "sudo reboot",
-	"poweroff":   "sudo poweroff",
-	"shutdown":   "sudo shutdown",
-	"useradd":    "sudo useradd",
-	"userdel":    "sudo userdel",
-	"groupadd":   "sudo groupadd",
-	"fdisk":      "sudo fdisk",
-	"mkfs":       "sudo mkfs",
-	"iptables":   "sudo iptables",
-	"ufw":        "sudo ufw",
+	"apt":      "sudo apt",
+	"apt-get":  "sudo apt-get",
+	"pacman":   "sudo pacman",
+	"dnf":      "sudo dnf",
+	"yum":      "sudo yum",
+	"reboot":   "sudo reboot",
+	"poweroff": "sudo poweroff",
+	"shutdown": "sudo shutdown",
+	"useradd":  "sudo useradd",
+	"userdel":  "sudo userdel",
+	"groupadd": "sudo groupadd",
+	"fdisk":    "sudo fdisk",
+	"mkfs":     "sudo mkfs",
+	"iptables": "sudo iptables",
+	"ufw":      "sudo ufw",
 }
 
 var safeReadOperations = map[string][]string{
@@ -319,7 +318,7 @@ func Analyze(rawInput string) *Diagnostic {
 
 	baseCmd := cmdParts[0]
 
-	if runtime.GOOS != "windows" && !hasSudo && os.Geteuid() != 0 {
+	if !hasSudo && os.Geteuid() != 0 {
 		if fix, ok := privilegedCommands[baseCmd]; ok {
 			if !isSafeOperation(baseCmd, cmdParts) {
 				fixedLine := fix + strings.TrimPrefix(activeSeg, baseCmd)
@@ -400,7 +399,7 @@ func Analyze(rawInput string) *Diagnostic {
 		return nil
 	}
 
-	if strings.Contains(baseCmd, "/") || strings.Contains(baseCmd, "\\") || strings.Contains(baseCmd, ":") || strings.HasPrefix(baseCmd, ".") || strings.HasPrefix(baseCmd, "~") {
+	if strings.Contains(baseCmd, "/") || strings.HasPrefix(baseCmd, ".") || strings.HasPrefix(baseCmd, "~") {
 		return nil
 	}
 

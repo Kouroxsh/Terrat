@@ -101,30 +101,10 @@ func TestAutosuggestPathWithSpaces(t *testing.T) {
 	}
 }
 
-func TestAutosuggestWindowsPathSeparators(t *testing.T) {
-	tmpDir := t.TempDir()
-	subDir := filepath.Join(tmpDir, "sub")
-	_ = os.Mkdir(subDir, 0755)
-	_ = os.WriteFile(filepath.Join(subDir, "target_file.txt"), []byte("data"), 0644)
-
-	eng := NewEngine()
-
-	suffix := eng.Suggest("cat sub\\tar", tmpDir)
-	if suffix != "get_file.txt" {
-		t.Fatalf("expected 'get_file.txt', got %q", suffix)
-	}
-
-	suffix = eng.Suggest("cat sub/tar", tmpDir)
-	if suffix != "get_file.txt" {
-		t.Fatalf("expected 'get_file.txt', got %q", suffix)
-	}
-}
-
 func TestHistoryLoadingIsBoundedAndKeepsRecentUniqueCommands(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	t.Setenv("APPDATA", home)
 	data := "old command\nbeta command\nalpha command\ngamma command\nalpha command\n"
 	if err := os.WriteFile(filepath.Join(home, ".bash_history"), []byte(data), 0600); err != nil {
 		t.Fatal(err)

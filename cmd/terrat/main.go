@@ -15,8 +15,8 @@ const (
 )
 
 var (
-	Version   = "0.2.5"
-	AppBanner = "TerraTerminal (Terrat) v" + Version + " - Blazing fast minimalist terminal for Linux & Windows"
+	Version   = "3.0.0"
+	AppBanner = "TerraTerminal (Terrat) v" + Version + " - Blazing fast minimalist terminal for Linux"
 )
 
 func main() {
@@ -38,7 +38,7 @@ func main() {
 	titleFlag := fs.String("title", app.AppName, "Set initial window title")
 	fontSizeFlag := fs.Float64("font-size", 0.0, "Font size in points (defaults to config)")
 	themeFlag := fs.String("theme", "", "Color theme override (tokyo-night, catppuccin-mocha, minecraft, tokyo-day, solarized-light)")
-	shellFlag := fs.String("shell", "", "Default shell override (e.g., bash, wsl.exe, powershell.exe)")
+	shellFlag := fs.String("shell", "", "Default shell override (e.g., bash, zsh)")
 	_ = fs.Parse(remainingArgs)
 
 	if *verFlag || *versionFlag {

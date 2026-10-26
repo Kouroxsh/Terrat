@@ -1,5 +1,5 @@
 import React from 'react';
-import { Monitor, Terminal, Layers } from 'lucide-react';
+import { Monitor, Layers } from 'lucide-react';
 
 const measurements = [
   { label: 'Plain terminal output', detail: '128 lines', value: '95.3 µs', allocation: '0 B allocated' },
@@ -17,12 +17,6 @@ const platforms = [
     icon: Monitor,
   },
   {
-    label: 'Windows',
-    title: 'Windows 10 and 11',
-    detail: 'Uses native Win32 windowing and ConPTY for shell sessions (Windows 10 build 1809 or newer).',
-    icon: Terminal,
-  },
-  {
     label: 'Build',
     title: 'Go, without CGO',
     detail: 'The application and platform code are Go packages. Release builds produce a standalone executable.',
@@ -37,7 +31,7 @@ export const Benchmarks: React.FC = () => (
         <div className="font-mono text-xs text-[#7aa2f7] uppercase tracking-wider mb-2">BENCHMARKS</div>
         <h2 className="text-3xl sm:text-5xl font-bold tracking-tight text-white mb-4">Measured on one Linux system.</h2>
         <p className="text-sm sm:text-base text-[#a9b1d6] leading-relaxed">
-          These Go microbenchmarks show the cost of selected terminal and rendering operations. They are useful for tracking changes, but do not represent whole-app startup, memory use, or Windows performance.
+          These Go microbenchmarks show the cost of selected terminal and rendering operations. They are useful for tracking changes, but do not represent whole-app startup or memory use.
         </p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 border border-[#292e42] divide-y sm:divide-y-0 sm:divide-x divide-[#292e42] bg-[#16161e]">
@@ -56,12 +50,12 @@ export const Benchmarks: React.FC = () => (
 
       <div className="max-w-2xl mt-16 mb-8">
         <div className="font-mono text-xs text-[#7aa2f7] uppercase tracking-wider mb-2">PLATFORM SUPPORT</div>
-        <h3 className="text-2xl sm:text-3xl font-bold tracking-tight text-white mb-3">Runs on Linux and Windows.</h3>
+        <h3 className="text-2xl sm:text-3xl font-bold tracking-tight text-white mb-3">Runs on Linux.</h3>
         <p className="text-sm text-[#a9b1d6] leading-relaxed">
-          Linux builds need an X11 server or XWayland. Windows builds use Win32 and ConPTY.
+          Linux builds need an X11 server or XWayland.
         </p>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 border border-[#292e42] divide-y md:divide-y-0 md:divide-x divide-[#292e42] bg-[#16161e]">
+      <div className="grid grid-cols-1 md:grid-cols-2 border border-[#292e42] divide-y md:divide-y-0 md:divide-x divide-[#292e42] bg-[#16161e]">
         {platforms.map(({ label, title, detail, icon: Icon }) => (
           <article key={label} className="p-6 sm:p-7">
             <div className="flex items-center justify-between mb-8">

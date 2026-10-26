@@ -8,7 +8,7 @@ export const Footer: React.FC = () => {
         <div className="flex items-center gap-3">
           <img src="./icon.png" alt="Terrat Logo" className="w-5 h-5 rounded-full border border-[#292e42]" />
           <div>
-            <span className="text-[#c0caf5] font-semibold">TerraTerminal</span> &mdash; Go terminal emulator for Linux and Windows
+            <span className="text-[#c0caf5] font-semibold">TerraTerminal</span> &mdash; Go terminal emulator for Linux
           </div>
         </div>
 

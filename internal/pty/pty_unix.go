@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build linux
 
 package pty
 
@@ -130,5 +130,3 @@ func (p *TerminalPTY) GetCwd() string {
 func (p *TerminalPTY) ShellName() string {
 	return p.shellName
 }
-
-

@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -161,9 +160,6 @@ func loadGitAliases() {
 }
 
 func probeShellAliases() {
-	if runtime.GOOS == "windows" && os.Getenv("SHELL") == "" {
-		return
-	}
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/bash"

@@ -91,10 +91,6 @@ func NewApp(cfg *config.Config, initialTitle string, customCmd []string) (*App, 
 
 	initCols := 120
 	initRows := 32
-	if runtime.GOOS == "windows" {
-		initCols = 128
-		initRows = 33
-	}
 
 	initWidth := uint16(render.PaddingLeft + (initCols * fontEngine.CharWidth()) + render.PaddingRight)
 	initHeight := uint16(render.HeaderHeight + render.PaddingTop + (initRows * fontEngine.CharHeight()) + render.PaddingBottom)

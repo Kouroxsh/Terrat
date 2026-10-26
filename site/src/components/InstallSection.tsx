@@ -41,12 +41,12 @@ export const InstallSection: React.FC = () => {
             Install TerraTerminal.
           </h2>
           <p className="text-sm sm:text-base text-[#a9b1d6] max-w-2xl">
-            Terrat builds without CGO. The release process creates standalone binaries for Linux and Windows; Linux also needs an X11 server or XWayland to open a window.
+            Terrat builds without CGO. Linux needs an X11 server or XWayland to open a window.
           </p>
         </div>
 
         {/* Installation Boxes */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
           {/* Method 1: Go Install */}
           <div className="p-6 bg-[#16161e] border border-[#292e42] rounded-[2px] flex flex-col justify-between">
             <div>
@@ -111,52 +111,19 @@ cd Terrat &amp;&amp; make install
             </div>
           </div>
 
-          {/* Method 3: Windows Native Build */}
-          <div className="p-6 bg-[#16161e] border border-[#292e42] rounded-[2px] flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <span className="font-mono text-xs text-[#bb9af7] uppercase tracking-wider font-bold">
-                  Windows: Native / Cross
-                </span>
-                <Terminal className="w-4 h-4 text-[#bb9af7]" />
-              </div>
-              <p className="text-xs text-[#a9b1d6] mb-4">
-                Compiles standalone ConPTY executable (<code>terrat.exe</code>):
-              </p>
-              <div className="p-3 bg-[#13141c] border border-[#292e42] rounded-[2px] font-mono text-xs flex items-center justify-between gap-3">
-                <pre className="text-[#c0caf5] select-all leading-relaxed whitespace-pre font-mono text-[11px]">
-go build -ldflags="-s -w" -o terrat.exe ./cmd/terrat
-                </pre>
-                <button
-                  onClick={() =>
-                    copyToClipboard(
-                      'go build -ldflags="-s -w" -o terrat.exe ./cmd/terrat',
-                      'win'
-                    )
-                  }
-                  className="text-[#565f89] hover:text-[#c0caf5] transition-colors shrink-0 self-start"
-                  title="Copy command"
-                >
-                  {copiedTab === 'win' ? <Check className="w-4 h-4 text-[#9ece6a]" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-            <div className="mt-4 text-[11px] font-mono text-[#565f89]">
-              Compatible with Windows 10/11 with ConPTY &amp; PowerShell.
-            </div>
-          </div>
+
         </div>
 
-        {/* Development & Bug Reports Callout */}
+        {/* Bug report callout */}
         <div className="border border-[#e0af68]/30 bg-[#e0af68]/5 rounded-[2px] p-5 mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 font-mono text-xs">
           <div className="flex items-start gap-3">
             <Bug className="w-4 h-4 text-[#e0af68] shrink-0 mt-0.5" />
             <div>
               <div className="text-[#e0af68] font-bold uppercase tracking-wider mb-1">
-                Under Active Development &bull; Found a Bug?
+                Found a bug?
               </div>
               <p className="text-[#a9b1d6] leading-relaxed">
-                Terrat is in active development. If you encounter crashes, rendering artifacts, or unexpected behavior, please report them on GitHub!
+                If you encounter a crash, rendering issue, or other unexpected behavior, please report it on GitHub.
               </p>
             </div>
           </div>
@@ -174,7 +141,7 @@ go build -ldflags="-s -w" -o terrat.exe ./cmd/terrat
         <div className="border border-[#292e42] bg-[#16161e] rounded-[2px] p-6 mb-8">
           <div className="flex items-center gap-2 font-mono text-xs text-[#7aa2f7] uppercase tracking-wider mb-4">
             <Settings className="w-4 h-4" />
-            <span>Configuration (~/.config/terrat/config.json or %APPDATA%\terrat\config.json)</span>
+            <span>Configuration (~/.config/terrat/config.json)</span>
           </div>
           <div className="p-4 bg-[#13141c] border border-[#292e42] rounded-[2px] font-mono text-xs text-[#a9b1d6] overflow-x-auto">
             <pre>{`{

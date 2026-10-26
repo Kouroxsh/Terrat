@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="${1:-${VERSION:-0.2.5}}"
+VERSION="${1:-${VERSION:-3.0.0}}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DIST_DIR="${ROOT_DIR}/dist"
@@ -94,64 +94,11 @@ EOF
     rm -rf "${PORTABLE_DIR}"
 done
 
-echo "Building Windows portable bundles for v${VERSION}..."
-for ARCH in amd64 arm64; do
-    WIN_BIN="${DIST_DIR}/terrat-windows-${ARCH}.exe"
-    echo "Compiling Windows binary for ${ARCH}..."
-    GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=windows GOARCH="${ARCH}" go build -ldflags="-s -w -H=windowsgui -X main.Version=${VERSION}" -o "${WIN_BIN}" "${ROOT_DIR}/cmd/terrat"
-
-    echo "Packaging Windows portable zip for ${ARCH}..."
-    WIN_PORTABLE=$(mktemp -d)
-    WIN_TARGET="${WIN_PORTABLE}/terrat-v${VERSION}-windows-${ARCH}"
-    mkdir -p "${WIN_TARGET}"
-    cp "${WIN_BIN}" "${WIN_TARGET}/terrat.exe"
-    cp "${ROOT_DIR}/assets/icon.png" "${WIN_TARGET}/"
-    cp "${ROOT_DIR}/LICENSE" "${WIN_TARGET}/"
-
-    cat << 'CFG' > "${WIN_TARGET}/config.json"
-{
-  "theme": "auto",
-  "font_size": 13.0,
-  "opacity": 0.95,
-  "ghost_text": true,
-  "diagnostics": true,
-  "sanitize_paste": true,
-  "bracketed_paste": true
-}
-CFG
-
-    cat << 'RME' > "${WIN_TARGET}/README.txt"
-TerraTerminal (Terrat) - Portable Edition
-=========================================
-A lightweight, frameless minimalist terminal emulator for Windows and Linux.
-
-Usage:
-  - Double-click terrat.exe to launch.
-  - Automatically detects Git Bash, PowerShell, and WSL.
-  - Edit config.json in this directory to customize fonts, colors, and behavior.
-
-Keyboard Shortcuts:
-  - Ctrl+Shift+T       : New Tab
-  - Ctrl+Shift+W       : Close Tab
-  - Ctrl+Tab / Shift   : Next / Previous Tab
-  - Ctrl+Shift+C / V   : Copy / Paste
-  - Ctrl+Shift+F       : Search text
-  - Ctrl+Shift+D       : Toggle Diagnostics & Typo suggestions
-  - Ctrl+Shift+Up/Down : Line scroll
-  - Shift+PageUp/Down  : Page scroll
-  - Ctrl+Plus / Minus  : Zoom in / Zoom out
-  - Ctrl+0             : Reset zoom
-RME
-
-    (cd "${WIN_PORTABLE}" && zip -q -r "${DIST_DIR}/terrat-v${VERSION}-windows-${ARCH}.zip" "terrat-v${VERSION}-windows-${ARCH}")
-    rm -rf "${WIN_PORTABLE}"
-done
-
 echo "Generating SHA-256 checksums..."
 (
     cd "${DIST_DIR}"
     rm -f checksums.txt
-    sha256sum *.deb *.rpm *.pkg.tar.zst *.tar.gz *.zip > checksums.txt
+    sha256sum *.deb *.rpm *.pkg.tar.zst *.tar.gz > checksums.txt
 )
 
 echo "Release assets successfully built in ${DIST_DIR}:"

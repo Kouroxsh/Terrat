@@ -5,9 +5,9 @@
 <h1 align="center">TerraTerminal (<code>terrat</code>)</h1>
 
 <p align="center">
-  <b>A terminal emulator for Linux and Windows, written in Go.</b>
+  <b>A terminal emulator for Linux, written in Go.</b>
   <br>
-  <i>Zero CGO &bull; Linux and Windows &bull; Single Binary &bull; v0.2.5</i>
+  <i>Zero CGO &bull; Linux &bull; Single Binary &bull; v3.0.0</i>
 </p>
 
 <p align="center">
@@ -29,7 +29,7 @@
 
 ## Overview
 
-TerraTerminal (`terrat`) is a desktop terminal emulator for Linux and Windows. It uses X11 or XWayland on Linux and Win32 with ConPTY on Windows, and builds without CGO. It includes tabs, configurable themes, font scaling, search, shell-history suggestions, and command diagnostics.
+TerraTerminal (`terrat`) is a desktop terminal emulator for Linux. It uses X11 or XWayland and builds without CGO. It includes tabs, configurable themes, font scaling, search, shell-history suggestions, and command diagnostics.
 
 Each tab has its own terminal state and shell session. Rendering uses an in-memory canvas, while platform-specific code presents the window. See the benchmark results below for measurements on one Linux system; they describe selected operations, not whole-application memory use or startup time.
 
@@ -44,8 +44,8 @@ Each tab has its own terminal state and shell session. Rendering uses an in-memo
 - 8-direction interactive border resizing with directional cursor morphing.
 
 ### 2. Isolated Multi-Tab Architecture
-- Each tab runs its own pseudo-terminal session (PTY on Linux, ConPTY on Windows) and terminal state.
-- Tab pills display live process names (`bash`, `nvim`, `htop`, `pwsh`, etc.).
+- Each tab runs its own pseudo-terminal session (PTY) and terminal state.
+- Tab pills display live process names (`bash`, `nvim`, `htop`, etc.).
 - Intuitive mouse controls: switch tabs, close individual tabs via `×`, or spawn sessions with `+`.
 - Clean process exit handling: exiting the active shell terminates the tab; closing the final tab cleanly exits the application.
 
@@ -54,7 +54,7 @@ Each tab has its own terminal state and shell session. Rendering uses an in-memo
 - In-memory glyph caching and system-font fallback.
 - Box-drawing support.
 - Persian/Arabic display is temporarily disabled; Arabic-script glyphs render as replacement characters. Right-to-left layout is unsupported.
-- Automatic PTY window recalculation with `SIGWINCH` propagation on Linux and ConPTY resize events on Windows.
+- Automatic PTY window recalculation with `SIGWINCH` propagation.
 
 ### 4. Interactive In-Buffer Search
 - Minimalist floating search bar toggled with `Ctrl+Shift+F`.
@@ -76,14 +76,14 @@ Each tab has its own terminal state and shell session. Rendering uses an in-memo
 ### 6. Live Command Diagnostics & Typo Linter
 - Integrated command parser supporting quotes, escapes, and chained operators (`&&`, `||`, `;`, `|`).
 - Detects unrecognized commands (`gti` &rarr; `git`, `sl` &rarr; `ls`, `mkae` &rarr; `make`), unknown subcommands (`git puch` &rarr; `git push`), unclosed quote strings, and commands requiring root privileges.
-- Intelligent path skipping for Windows executables (`C:\...`, `.exe`).
+- Intelligent path skipping for filesystem paths.
 - Press **`Alt + Enter`** to automatically apply the recommended QuickFix directly to the active prompt.
 - Press **`Ctrl + Shift + D`** to toggle diagnostics on and off.
 
 ### 7. Fish-Style Ghost Autocomplete & Path Suggestions
 - Subtle inline suggestions rendered directly ahead of the cursor.
-- Automatically reads shell histories across platforms: `~/.bash_history`, `~/.zsh_history` on Linux, and PowerShell PSReadLine (`ConsoleHost_history.txt`) on Windows.
-- Intelligent path autocompletion supporting both `/` and `\` separators, spaces with escapes, quoted tokens (`"..."` / `'...'`), and home directory expansion (`~`, `~/`, `~\`).
+- Automatically reads Bash and Zsh shell histories from `~/.bash_history` and `~/.zsh_history`.
+- Intelligent path autocompletion supporting `/` separators, spaces with escapes, quoted tokens (`"..."` / `'...'`), and home directory expansion (`~`, `~/`).
 - Press **`Tab`** or **`Right Arrow`** to accept the suggestion.
 
 ### 8. Hardened Clipboard & Anti-Pastejacking
@@ -132,8 +132,6 @@ Each tab has its own terminal state and shell session. Rendering uses an in-memo
 | `Ctrl + 0` | Reset font size to default (13pt) |
 | `Ctrl + Wheel Up / Down` | Zoom in / out with mouse wheel |
 | `Shift + PageUp / PageDown` | Scroll terminal viewport up / down |
-| `Ctrl + Shift + Up / Down` *(Windows)* | Scroll terminal viewport up / down |
-| `Ctrl + Shift + PageUp / PageDown` *(Windows)* | Scroll to top / bottom of terminal viewport |
 | `Ctrl + ,` / `Ctrl + Shift + P` | Open / close Preferences modal |
 
 ---
@@ -151,7 +149,7 @@ terrat [flags] [-e command [args...]]
 | `-title <string>` | Set initial window title | `TerraTerminal` |
 | `-font-size <float>` | Override font size in points | *(config)* |
 | `-theme <string>` | Color theme (`tokyo-night`, `catppuccin-mocha`, `minecraft`, `tokyo-day`, `solarized-light`) | *(config)* |
-| `-shell <path>` | Override default shell binary (e.g. `bash`, `wsl.exe`, `powershell.exe`) | *(system)* |
+| `-shell <path>` | Override default shell binary (e.g. `bash`, `zsh`) | *(system)* |
 | `-e <cmd...>` | Execute a custom command directly instead of the default shell | &mdash; |
 
 ### Examples
@@ -168,7 +166,7 @@ terrat -e nvim /path/to/file
 
 ## Configuration
 
-Settings are saved automatically under the user configuration directory in `terrat/config.json`. On Linux, `XDG_CONFIG_HOME` is used when set (otherwise typically `~/.config`); on Windows, the OS user configuration directory is used. If a `config.json` file is present beside the executable, that file takes precedence for portable installs:
+Settings are saved automatically under the Linux user configuration directory in `terrat/config.json`. `XDG_CONFIG_HOME` is used when set (otherwise typically `~/.config`). If a `config.json` file is present beside the executable, that file takes precedence for portable installs:
 
 ```json
 {
@@ -200,7 +198,7 @@ These Go microbenchmarks were run five times on Linux/amd64 with Go 1.22.6 on an
 | Create and close the font engine | 1.96 ms | 677,434 B/op, 1,199 allocs/op |
 | Add an entry to shell history | 42.4 ns | 0 B/op, 0 allocs/op |
 
-The terminal-write benchmark sends a 128-line payload after warming the terminal. Rendering uses the CPU canvas and does not include X11/Win32 presentation, window composition, or shell startup. These figures are not whole-app latency or resident-memory measurements and should not be read as a cross-platform comparison. To repeat them, run:
+The terminal-write benchmark sends a 128-line payload after warming the terminal. Rendering uses the CPU canvas and does not include X11 presentation, window composition, or shell startup. These figures are not whole-app latency or resident-memory measurements and describe Linux measurements only. To repeat them, run:
 
 ```bash
 go test ./internal/terminal ./internal/render ./internal/autosuggest -run '^$' -bench . -benchmem -benchtime=500ms -count=5
@@ -212,7 +210,6 @@ go test ./internal/terminal ./internal/render ./internal/autosuggest -run '^$' -
 
 ### Prerequisites
 - **Linux:** X11 server or Wayland via XWayland.
-- **Windows:** Windows 10 or 11 (build 1809+ for ConPTY).
 - **Go 1.22+** (only required if compiling from source).
 
 ### Building from Source
@@ -228,14 +225,11 @@ make build
 # Linux: Optional install to ~/go/bin with desktop entry and icon
 make install
 
-# Windows: Compile native static executable (or cross-compile from Linux)
-GOOS=windows go build -ldflags="-s -w" -o terrat.exe ./cmd/terrat
-
-# Build release packages (.deb, .rpm, .pkg.tar.zst, .tar.gz, .zip) via nfpm
+# Build Linux release packages (.deb, .rpm, .pkg.tar.zst, .tar.gz) via nfpm
 make package
 ```
 
-The package target also builds Windows portable ZIP files. Building packages requires `nfpm`; the packaging script attempts to install it with `go install` if it is not already available.
+Building packages requires `nfpm`; the packaging script attempts to install it with `go install` if it is not already available.
 
 ### Running Tests & Static Analysis
 
@@ -245,9 +239,6 @@ go test -race -count=1 ./...
 
 # Run static analysis
 go vet ./...
-
-# Cross-compile validation for Windows
-GOOS=windows go build ./...
 ```
 
 ---

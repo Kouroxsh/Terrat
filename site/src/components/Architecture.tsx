@@ -5,13 +5,13 @@ export const Architecture: React.FC = () => {
   const pillars = [
     {
       icon: Network,
-      title: 'Direct X11 Wire & Native ConPTY',
-      desc: 'On Linux, Terrat connects to X11 through XGB and works in Wayland sessions that provide XWayland. On Windows, it uses Win32 APIs and ConPTY. The project builds without CGO.',
+      title: 'Direct X11 Connection',
+      desc: 'Terrat connects to X11 through XGB and works in Wayland sessions that provide XWayland. The project builds without CGO.',
     },
     {
       icon: Cpu,
       title: 'Cached Glyphs & Buffered Drawing',
-      desc: 'Glyphs are cached in memory. Linux draws into an X11 pixmap; Windows draws into a GDI back buffer before the frame is shown.',
+      desc: 'Glyphs are cached in memory and drawn into an X11 pixmap before the frame is shown.',
     },
     {
       icon: Terminal,
@@ -36,7 +36,7 @@ export const Architecture: React.FC = () => {
             How Terrat works under the hood.
           </h2>
           <p className="text-sm sm:text-base text-[#a9b1d6] leading-relaxed">
-            Terrat uses platform APIs directly: X11 or XWayland on Linux, and Win32 with ConPTY on Windows. It builds without CGO and keeps rendering, terminal state, and shell sessions in one desktop application.
+            Terrat uses X11 or XWayland directly. It builds without CGO and keeps rendering, terminal state, and shell sessions in one desktop application.
           </p>
         </div>
 

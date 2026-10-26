@@ -3,7 +3,6 @@ package render
 import (
 	"image"
 	"os"
-	"path/filepath"
 	"unicode"
 
 	"github.com/golang/freetype/truetype"
@@ -54,33 +53,6 @@ var candidateFallbackFonts = []string{
 	"/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
 	"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
 	"/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-}
-
-func init() {
-	windir := os.Getenv("WINDIR")
-	if windir == "" {
-		windir = `C:\Windows`
-	}
-	var winFonts []string
-	if localApp := os.Getenv("LOCALAPPDATA"); localApp != "" {
-		winFonts = append(winFonts,
-			filepath.Join(localApp, "Microsoft", "Windows", "Fonts", "CascadiaMono.ttf"),
-			filepath.Join(localApp, "Microsoft", "Windows", "Fonts", "CascadiaCode.ttf"),
-		)
-	}
-	winFonts = append(winFonts,
-		filepath.Join(windir, "Fonts", "CascadiaMono.ttf"),
-		filepath.Join(windir, "Fonts", "CascadiaCode.ttf"),
-		filepath.Join(windir, "Fonts", "consola.ttf"),
-		filepath.Join(windir, "Fonts", "lucon.ttf"),
-	)
-	candidateTTFFonts = append(winFonts, candidateTTFFonts...)
-	candidateFallbackFonts = append([]string{
-		filepath.Join(windir, "Fonts", "segoeui.ttf"),
-		filepath.Join(windir, "Fonts", "seguiemj.ttf"),
-		filepath.Join(windir, "Fonts", "seguisym.ttf"),
-		filepath.Join(windir, "Fonts", "arial.ttf"),
-	}, candidateFallbackFonts...)
 }
 
 func NewFontEngine(fontSize float64) (*FontEngine, error) {
