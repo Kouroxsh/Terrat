@@ -49,8 +49,6 @@ Change the font size with `Ctrl+=`, `Ctrl+-`, or `Ctrl + MouseWheel`. Glyphs are
 
 Press `Ctrl+Shift+F` to search the terminal buffer. Matches are highlighted; `Enter` and `Shift+Enter` move between them.
 
-**Current limitation:** Persian and Arabic display is disabled. Arabic-script glyphs appear as replacement characters, and right-to-left layout is unsupported.
-
 ### Themes
 
 Open Preferences with `Ctrl+,` or `Ctrl+Shift+P` to choose a theme:
