@@ -14,7 +14,6 @@ export const HeroTerminal: React.FC = () => (
           </p>
           <div className="flex gap-2 mt-6 font-mono text-[11px]">
             <span className="px-2 py-1 border border-[#292e42] text-[#c0caf5]">v3.0.0</span>
-            <span className="px-2 py-1 border border-[#e0af68]/40 text-[#e0af68]">Pre-release</span>
             <span className="px-2 py-1 border border-[#292e42] text-[#565f89]">X11 / XWayland · No CGO</span>
           </div>
         </div>

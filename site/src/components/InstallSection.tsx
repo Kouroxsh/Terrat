@@ -121,7 +121,7 @@ cd Terrat &amp;&amp; make install
                 <Download className="w-4 h-4 text-[#e0af68]" />
               </div>
               <p className="text-xs text-[#a9b1d6] mb-4">
-                v3.0.0 pre-release packages built with nfpm — no build needed:
+                v3.0.0 packages built with nfpm — no build needed:
               </p>
               <div className="flex flex-col gap-2 font-mono text-xs">
                 <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.0" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
@@ -143,7 +143,7 @@ cd Terrat &amp;&amp; make install
               </div>
             </div>
             <div className="mt-4 text-[11px] font-mono text-[#565f89]">
-              v3.0.0 is a pre-release. Check checksums.txt on the release page.
+              v3.0.0 stable release — see the release page for packages.
             </div>
           </div>
 
