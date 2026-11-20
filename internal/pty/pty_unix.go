@@ -4,10 +4,13 @@ package pty
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/creack/pty"
 	"golang.org/x/sys/unix"
@@ -17,6 +20,21 @@ type TerminalPTY struct {
 	file      *os.File
 	cmd       *exec.Cmd
 	shellName string
+
+	// mu serialises Write, Resize and the final file close so concurrent
+	// writers (UI keystrokes/paste, the CPR-response pump, ghost-text
+	// writes) can never interleave bytes mid-escape-sequence.
+	mu sync.Mutex
+	// done is closed by Close: no new I/O may start afterwards.
+	done chan struct{}
+	// closeOnce makes Close idempotent.
+	closeOnce sync.Once
+	// fileClosed guards the master fd; it is only ever closed by
+	// CloseFile, and only once.
+	fileClosed bool
+	// waitDone is closed by Wait once the child has been reaped.
+	waitDone chan struct{}
+	waitOnce sync.Once
 }
 
 func Start(cols, rows, pixelWidth, pixelHeight uint16, customCmd ...string) (*TerminalPTY, error) {
@@ -65,18 +83,52 @@ func Start(cols, rows, pixelWidth, pixelHeight uint16, customCmd ...string) (*Te
 		file:      f,
 		cmd:       cmd,
 		shellName: shellName,
+		done:      make(chan struct{}),
+		waitDone:  make(chan struct{}),
 	}, nil
 }
 
 func (p *TerminalPTY) Read(b []byte) (int, error) {
+	select {
+	case <-p.done:
+		return 0, os.ErrClosed
+	default:
+	}
 	return p.file.Read(b)
 }
 
 func (p *TerminalPTY) Write(b []byte) (int, error) {
-	return p.file.Write(b)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	select {
+	case <-p.done:
+		return 0, os.ErrClosed
+	default:
+	}
+	// Serialised by p.mu, so concurrent writers cannot interleave.
+	// Loop so a short write cannot silently truncate an escape sequence.
+	total := 0
+	for total < len(b) {
+		n, err := p.file.Write(b[total:])
+		total += n
+		if err != nil {
+			return total, err
+		}
+		if n == 0 {
+			return total, io.ErrShortWrite
+		}
+	}
+	return total, nil
 }
 
 func (p *TerminalPTY) Resize(cols, rows, pixelWidth, pixelHeight uint16) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	select {
+	case <-p.done:
+		return os.ErrClosed
+	default:
+	}
 	ws := &pty.Winsize{
 		Rows: rows,
 		Cols: cols,
@@ -86,18 +138,85 @@ func (p *TerminalPTY) Resize(cols, rows, pixelWidth, pixelHeight uint16) error {
 	return pty.Setsize(p.file, ws)
 }
 
+// Close shuts the PTY down: it stops new I/O and kills the child's process
+// group (SIGHUP, escalating to SIGTERM then SIGKILL) so HUP-ignoring
+// processes cannot survive as orphans. It is idempotent.
+//
+// The master fd itself is NOT closed here: the reader goroutine is blocked
+// in Read, and closing the fd under it risks the fd number being reused by
+// a new tab's PTY. Instead the reader closes the fd itself via CloseFile
+// once its Read has returned; Close starts a bounded watchdog that closes
+// it after 2s if the reader is somehow still stuck.
 func (p *TerminalPTY) Close() error {
-	if p.cmd != nil && p.cmd.Process != nil {
-		_ = p.cmd.Process.Signal(syscall.SIGHUP)
+	p.closeOnce.Do(func() {
+		close(p.done)
+		p.killProcessGroup()
+		go func() {
+			select {
+			case <-p.waitDone:
+			case <-time.After(2 * time.Second):
+			}
+			p.CloseFile()
+		}()
+	})
+	return nil
+}
+
+// CloseFile closes the master fd, at most once. It must only be called
+// after no goroutine is blocked in Read on this PTY (the reader calls it
+// when its Read loop exits); the Close watchdog calls it as a last resort.
+func (p *TerminalPTY) CloseFile() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.fileClosed {
+		return nil
 	}
+	p.fileClosed = true
 	return p.file.Close()
+}
+
+// killProcessGroup signals the child's whole process group. The child is a
+// session leader (creack/pty sets Setsid), so its pgid equals its pid.
+// SIGHUP goes out immediately; a goroutine escalates to SIGTERM after
+// 200ms and SIGKILL after a further 500ms if the group is still alive,
+// stopping early once Wait has reaped the child.
+func (p *TerminalPTY) killProcessGroup() {
+	if p.cmd == nil || p.cmd.Process == nil {
+		return
+	}
+	pid := p.cmd.Process.Pid
+	_ = syscall.Kill(-pid, syscall.SIGHUP)
+	go func() {
+		for _, step := range []struct {
+			delay time.Duration
+			sig   syscall.Signal
+		}{
+			{200 * time.Millisecond, syscall.SIGTERM},
+			{500 * time.Millisecond, syscall.SIGKILL},
+		} {
+			timer := time.NewTimer(step.delay)
+			select {
+			case <-timer.C:
+			case <-p.waitDone:
+				timer.Stop()
+				return
+			}
+			// Signal 0 probes existence; EPERM means alive but unpermitted.
+			if err := syscall.Kill(pid, 0); err != nil {
+				return
+			}
+			_ = syscall.Kill(-pid, step.sig)
+		}
+	}()
 }
 
 func (p *TerminalPTY) Wait() (*os.ProcessState, error) {
 	if p.cmd == nil {
+		p.waitOnce.Do(func() { close(p.waitDone) })
 		return nil, nil
 	}
 	err := p.cmd.Wait()
+	p.waitOnce.Do(func() { close(p.waitDone) })
 	return p.cmd.ProcessState, err
 }
 

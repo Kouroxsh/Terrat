@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 
 	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/bigreq"
@@ -51,6 +52,15 @@ type Window struct {
 
 	keyHandler *KeyHandler
 	eventCh    chan Event
+
+	// done is closed by Close to tell the event loop to exit.
+	done chan struct{}
+	// loopDone is closed by the event loop when it returns.
+	loopDone chan struct{}
+	// closeOnce makes Close idempotent.
+	closeOnce sync.Once
+	// closeEventsOnce guards the single close of eventCh.
+	closeEventsOnce sync.Once
 }
 
 func NewWindow(title string, width, height uint16, iconPath string, iconData []byte) (*Window, error) {
@@ -141,6 +151,8 @@ func NewWindow(title string, width, height uint16, iconPath string, iconData []b
 		Height:        height,
 		cursors:       make(map[CursorType]xproto.Cursor),
 		currentCursor: CursorDefault,
+		done:          make(chan struct{}),
+		loopDone:      make(chan struct{}),
 	}
 
 	w.AtomWmProtocols, _ = internAtom(X, "WM_PROTOCOLS")
@@ -535,14 +547,42 @@ func (w *Window) Blit(pixels []byte, width, height uint16) {
 	w.X.Sync()
 }
 
-func (w *Window) Close() {
-	if w.pixmap != 0 {
-		_ = xproto.FreePixmap(w.X, w.pixmap)
-		w.pixmap = 0
+// closeEvents closes the event channel exactly once. App.Run treats a
+// closed channel as the signal to exit.
+func (w *Window) closeEvents() {
+	w.closeEventsOnce.Do(func() { close(w.eventCh) })
+}
+
+// sendEvent delivers ev unless the window is closing.
+func (w *Window) sendEvent(ev Event) bool {
+	select {
+	case w.eventCh <- ev:
+		return true
+	case <-w.done:
+		return false
 	}
-	_ = xproto.FreeGC(w.X, w.GC)
-	_ = xproto.DestroyWindow(w.X, w.Win)
-	w.X.Close()
+}
+
+func (w *Window) Close() {
+	w.closeOnce.Do(func() {
+		// Tell the event loop to exit, then unblock it: closing the X
+		// connection makes the blocked WaitForEvent fail, and the loop
+		// closes the event channel and returns.
+		close(w.done)
+		w.X.Close()
+		select {
+		case <-w.loopDone:
+		case <-time.After(2 * time.Second):
+		}
+		// Best-effort cleanup of server-side resources; the X server
+		// reclaims the window, pixmap and GC when the client disconnects.
+		if w.pixmap != 0 {
+			_ = xproto.FreePixmap(w.X, w.pixmap)
+			w.pixmap = 0
+		}
+		_ = xproto.FreeGC(w.X, w.GC)
+		_ = xproto.DestroyWindow(w.X, w.Win)
+	})
 }
 
 func (w *Window) SetClipboard(text string) {
@@ -707,41 +747,76 @@ func (w *Window) PastePrimary() {
 }
 
 func (w *Window) eventLoop() {
+	defer close(w.loopDone)
+	consecErrs := 0
 	for {
-		ev, err := w.X.WaitForEvent()
-		if ev == nil && err == nil {
-			close(w.eventCh)
+		select {
+		case <-w.done:
+			w.closeEvents()
 			return
+		default:
 		}
+		ev, err := w.X.WaitForEvent()
 		if err != nil {
-			continue
+			// The X connection is broken (e.g. the server went away).
+			// Back off briefly in case the error is transient, but
+			// never spin: after a few consecutive errors the loop exits
+			// and closes the event channel so the app can shut down
+			// instead of hanging at 100% CPU.
+			consecErrs++
+			if consecErrs >= 5 {
+				w.closeEvents()
+				return
+			}
+			delay := time.Duration(consecErrs) * 10 * time.Millisecond
+			select {
+			case <-w.done:
+				w.closeEvents()
+				return
+			case <-time.After(delay):
+				continue
+			}
+		}
+		consecErrs = 0
+		if ev == nil {
+			w.closeEvents()
+			return
 		}
 		switch e := ev.(type) {
 		case xproto.MotionNotifyEvent:
-			w.eventCh <- MotionNotifyEvent{
+			if !w.sendEvent(MotionNotifyEvent{
 				EventX: e.EventX,
 				EventY: e.EventY,
 				RootX:  e.RootX,
 				RootY:  e.RootY,
 				State:  e.State,
+			}) {
+				w.closeEvents()
+				return
 			}
 		case xproto.ButtonPressEvent:
-			w.eventCh <- ButtonPressEvent{
+			if !w.sendEvent(ButtonPressEvent{
 				Detail: uint8(e.Detail),
 				State:  e.State,
 				EventX: e.EventX,
 				EventY: e.EventY,
 				RootX:  e.RootX,
 				RootY:  e.RootY,
+			}) {
+				w.closeEvents()
+				return
 			}
 		case xproto.ButtonReleaseEvent:
-			w.eventCh <- ButtonReleaseEvent{
+			if !w.sendEvent(ButtonReleaseEvent{
 				Detail: uint8(e.Detail),
 				State:  e.State,
 				EventX: e.EventX,
 				EventY: e.EventY,
 				RootX:  e.RootX,
 				RootY:  e.RootY,
+			}) {
+				w.closeEvents()
+				return
 			}
 		case xproto.KeyPressEvent:
 			var act ActionType
@@ -751,26 +826,38 @@ func (w *Window) eventLoop() {
 				ksym = uint32(w.keyHandler.KeySym(e))
 				b, act = w.keyHandler.Translate(e)
 			}
-			w.eventCh <- KeyPressEvent{
+			if !w.sendEvent(KeyPressEvent{
 				Detail: byte(e.Detail),
 				State:  e.State,
 				KeySym: ksym,
 				Bytes:  b,
 				Action: act,
+			}) {
+				w.closeEvents()
+				return
 			}
 		case xproto.ConfigureNotifyEvent:
-			w.eventCh <- ConfigureNotifyEvent{
+			if !w.sendEvent(ConfigureNotifyEvent{
 				Width:  e.Width,
 				Height: e.Height,
+			}) {
+				w.closeEvents()
+				return
 			}
 		case xproto.ExposeEvent:
-			w.eventCh <- ExposeEvent{}
+			if !w.sendEvent(ExposeEvent{}) {
+				w.closeEvents()
+				return
+			}
 		case xproto.FocusInEvent:
 			if w.keyHandler != nil {
 				w.keyHandler.RefreshXKBState(w.X)
 			}
 		case xproto.FocusOutEvent:
-			w.eventCh <- FocusOutEvent{}
+			if !w.sendEvent(FocusOutEvent{}) {
+				w.closeEvents()
+				return
+			}
 		case XKBStateNotifyEvent:
 			if len(e.Data) >= 14 && w.keyHandler != nil {
 				if e.Data[1] == 2 { // XkbStateNotify
@@ -781,19 +868,28 @@ func (w *Window) eventLoop() {
 			if w.keyHandler != nil {
 				_ = w.keyHandler.RefreshMapping(w.X)
 			}
-			w.eventCh <- MappingNotifyEvent{}
+			if !w.sendEvent(MappingNotifyEvent{}) {
+				w.closeEvents()
+				return
+			}
 		case xproto.SelectionRequestEvent:
 			w.HandleSelectionRequest(e)
 		case xproto.SelectionNotifyEvent:
 			val := w.HandleSelectionNotify(e)
 			if len(val) > 0 {
-				w.eventCh <- PasteNotifyEvent{Text: string(val)}
+				if !w.sendEvent(PasteNotifyEvent{Text: string(val)}) {
+					w.closeEvents()
+					return
+				}
 			}
 		case xproto.SelectionClearEvent:
 			// selection clear - no-op
 		case xproto.ClientMessageEvent:
 			if e.Format == 32 && len(e.Data.Data32) > 0 && xproto.Atom(e.Data.Data32[0]) == w.AtomWmDeleteWindow {
-				w.eventCh <- CloseRequestEvent{}
+				if !w.sendEvent(CloseRequestEvent{}) {
+					w.closeEvents()
+					return
+				}
 			}
 		}
 	}
