@@ -214,11 +214,35 @@ func (t *Terminal) AppCursorLocked() bool {
 	return t.appCursor
 }
 
+// AppCursor is the locking version of AppCursorLocked, for callers that do
+// not already hold t.mu (e.g. the UI event handlers in internal/app).
+func (t *Terminal) AppCursor() bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.appCursor
+}
+
 func (t *Terminal) MouseTrackingLocked() bool {
 	return t.mouseTracking
 }
 
+// MouseTracking is the locking version of MouseTrackingLocked, for callers
+// that do not already hold t.mu.
+func (t *Terminal) MouseTracking() bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.mouseTracking
+}
+
 func (t *Terminal) MouseSGRLocked() bool {
+	return t.mouseSGR
+}
+
+// MouseSGR is the locking version of MouseSGRLocked, for callers that do
+// not already hold t.mu.
+func (t *Terminal) MouseSGR() bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	return t.mouseSGR
 }
 

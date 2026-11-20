@@ -93,9 +93,14 @@ func createTab(
 				}
 			}
 			if readErr != nil {
-				return
+				break
 			}
 		}
+		// The child is gone and this goroutine is no longer blocked in
+		// Read, so it is safe to release the master fd now. Closing it
+		// here (rather than in Close) avoids closing it under a blocked
+		// Read, which could let a new tab's PTY reuse the fd number.
+		_ = tab.PTY.CloseFile()
 	}()
 
 	// Title update pump

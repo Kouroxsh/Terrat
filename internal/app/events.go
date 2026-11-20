@@ -39,7 +39,7 @@ func (a *App) sendMouseEvent(btn int, press bool, pixelX, pixelY int, state uint
 	}
 	curTerm := a.tabs[a.activeTabIdx].Term
 	curPTY := a.tabs[a.activeTabIdx].PTY
-	if !curTerm.MouseTrackingLocked() {
+	if !curTerm.MouseTracking() {
 		return false
 	}
 	cx, cy := a.toCellCoords(pixelX, pixelY)
@@ -57,7 +57,7 @@ func (a *App) sendMouseEvent(btn int, press bool, pixelX, pixelY int, state uint
 		cb |= 16
 	}
 
-	if curTerm.MouseSGRLocked() {
+	if curTerm.MouseSGR() {
 		terminator := 'M'
 		if !press {
 			terminator = 'm'
@@ -448,7 +448,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 				return false
 			}
 
-			if activeTerm.MouseTrackingLocked() && (e.State&platform.ModShift) == 0 {
+			if activeTerm.MouseTracking() && (e.State&platform.ModShift) == 0 {
 				if a.sendMouseEvent(0, true, int(e.EventX), int(e.EventY), e.State) {
 					return false
 				}
@@ -505,14 +505,14 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 				}
 				return false
 			}
-			if activeTerm.MouseTrackingLocked() && (e.State&platform.ModShift) == 0 {
+			if activeTerm.MouseTracking() && (e.State&platform.ModShift) == 0 {
 				if a.sendMouseEvent(1, true, int(e.EventX), int(e.EventY), e.State) {
 					return false
 				}
 			}
 			a.win.PastePrimary()
 		case 3:
-			if activeTerm.MouseTrackingLocked() && (e.State&platform.ModShift) == 0 {
+			if activeTerm.MouseTracking() && (e.State&platform.ModShift) == 0 {
 				if a.sendMouseEvent(2, true, int(e.EventX), int(e.EventY), e.State) {
 					return false
 				}
@@ -543,7 +543,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 				a.applyZoom(platform.ActionZoomIn)
 				return false
 			}
-			if activeTerm.MouseTrackingLocked() && (e.State&platform.ModShift) == 0 {
+			if activeTerm.MouseTracking() && (e.State&platform.ModShift) == 0 {
 				if a.sendMouseEvent(64, true, int(e.EventX), int(e.EventY), e.State) {
 					return false
 				}
@@ -569,7 +569,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 				a.applyZoom(platform.ActionZoomOut)
 				return false
 			}
-			if activeTerm.MouseTrackingLocked() && (e.State&platform.ModShift) == 0 {
+			if activeTerm.MouseTracking() && (e.State&platform.ModShift) == 0 {
 				if a.sendMouseEvent(65, true, int(e.EventX), int(e.EventY), e.State) {
 					return false
 				}
@@ -583,7 +583,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 		}
 
 	case platform.ButtonReleaseEvent:
-		if activeTerm.MouseTrackingLocked() && (e.State&platform.ModShift) == 0 {
+		if activeTerm.MouseTracking() && (e.State&platform.ModShift) == 0 {
 			btn := -1
 			switch e.Detail {
 			case 1:
@@ -621,7 +621,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 		data := string(e.Bytes)
 		action := e.Action
 
-		if activeTerm.AppCursorLocked() && (e.State&(platform.ModCtrl|platform.ModAlt|platform.ModShift)) == 0 {
+		if activeTerm.AppCursor() && (e.State&(platform.ModCtrl|platform.ModAlt|platform.ModShift)) == 0 {
 			switch keysym {
 			case 0xff52:
 				data = "\x1bOA"
