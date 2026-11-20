@@ -46,7 +46,7 @@ export const InstallSection: React.FC = () => {
         </div>
 
         {/* Installation Boxes */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
           {/* Method 1: Go Install */}
           <div className="p-6 bg-[#16161e] border border-[#292e42] rounded-[2px] flex flex-col justify-between">
             <div>
@@ -111,6 +111,41 @@ cd Terrat &amp;&amp; make install
             </div>
           </div>
 
+          {/* Method 3: Download Packages */}
+          <div className="p-6 bg-[#16161e] border border-[#292e42] rounded-[2px] flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="font-mono text-xs text-[#e0af68] uppercase tracking-wider font-bold">
+                  Download Packages
+                </span>
+                <Download className="w-4 h-4 text-[#e0af68]" />
+              </div>
+              <p className="text-xs text-[#a9b1d6] mb-4">
+                v3.0.0 pre-release packages built with nfpm — no build needed:
+              </p>
+              <div className="flex flex-col gap-2 font-mono text-xs">
+                <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.0" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
+                  <span>.deb — Debian / Ubuntu</span>
+                  <span className="text-[#565f89]">amd64 · arm64</span>
+                </a>
+                <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.0" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
+                  <span>.rpm — Fedora / RHEL / openSUSE</span>
+                  <span className="text-[#565f89]">amd64 · arm64</span>
+                </a>
+                <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.0" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
+                  <span>.pkg.tar.zst — Arch Linux</span>
+                  <span className="text-[#565f89]">amd64 · arm64</span>
+                </a>
+                <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.0" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
+                  <span>.tar.gz — Portable Linux</span>
+                  <span className="text-[#565f89]">amd64 · arm64</span>
+                </a>
+              </div>
+            </div>
+            <div className="mt-4 text-[11px] font-mono text-[#565f89]">
+              v3.0.0 is a pre-release. Check checksums.txt on the release page.
+            </div>
+          </div>
 
         </div>
 
