@@ -380,6 +380,14 @@ func (a *App) doWritePastedText(text string) {
 	if len(a.tabs) == 0 || a.activeTabIdx >= len(a.tabs) {
 		return
 	}
+	// Never let pasted text smuggle its own bracketed-paste terminators:
+	// an inner ESC[201~ would end the bracketed paste early and let the
+	// following lines execute as commands (pastejacking). Strip them
+	// unconditionally, even when paste sanitizing is turned off.
+	text = strings.ReplaceAll(text, "\x1b[200~", "")
+	text = strings.ReplaceAll(text, "\x1b[201~", "")
+	text = strings.ReplaceAll(text, "\u009b200~", "")
+	text = strings.ReplaceAll(text, "\u009b201~", "")
 	activeTerm := a.tabs[a.activeTabIdx].Term
 	activePTY := a.tabs[a.activeTabIdx].PTY
 	var toSend []byte

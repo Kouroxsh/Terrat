@@ -211,9 +211,19 @@ func NewCanvas(fe *FontEngine) *Canvas {
 	}
 }
 
+// maxCanvasDimension caps the framebuffer size: without it a single huge
+// ConfigureNotify (e.g. 65535x65535) would allocate ~17 GB and OOM the app.
+const maxCanvasDimension = 16384
+
 func (c *Canvas) Resize(width, height int) {
 	if width <= 0 || height <= 0 {
 		return
+	}
+	if width > maxCanvasDimension {
+		width = maxCanvasDimension
+	}
+	if height > maxCanvasDimension {
+		height = maxCanvasDimension
 	}
 	c.Width = width
 	c.Height = height

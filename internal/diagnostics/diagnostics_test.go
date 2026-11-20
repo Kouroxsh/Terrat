@@ -1,6 +1,7 @@
 package diagnostics
 
 import (
+	"os"
 	"testing"
 )
 
@@ -53,10 +54,12 @@ func TestAnalyzeTypos(t *testing.T) {
 		t.Fatalf("expected unclosed quote warning, got %+v", d)
 	}
 
-	// Privilege check
-	d = Analyze("apt install neovim")
-	if d == nil || d.Severity != SeverityWarning {
-		t.Fatalf("expected root privilege warning for 'apt install', got %+v", d)
+	// Privilege check (skipped as root: root needs no sudo, so no warning is correct)
+	if os.Geteuid() != 0 {
+		d = Analyze("apt install neovim")
+		if d == nil || d.Severity != SeverityWarning {
+			t.Fatalf("expected root privilege warning for 'apt install', got %+v", d)
+		}
 	}
 
 	// Safe read-only operations should NOT warn

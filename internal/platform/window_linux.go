@@ -84,7 +84,8 @@ func NewWindow(title string, width, height uint16, iconPath string, iconData []b
 			xproto.EventMaskFocusChange |
 			xproto.EventMaskButtonPress |
 			xproto.EventMaskButtonRelease |
-			xproto.EventMaskPointerMotion,
+			xproto.EventMaskPointerMotion |
+			xproto.EventMaskButtonMotion,
 	)
 
 	createMask := uint32(
