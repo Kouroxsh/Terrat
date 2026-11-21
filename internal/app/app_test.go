@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Kouroxsh/Terrat/internal/config"
 	"github.com/Kouroxsh/Terrat/internal/platform"
@@ -155,5 +156,77 @@ func TestHandleEventInvalidTabBounds(t *testing.T) {
 	shouldExit := app.handleEvent(platform.ExposeEvent{}, &pending, ch)
 	if shouldExit {
 		t.Errorf("expected handleEvent to return false on invalid activeTabIdx")
+	}
+}
+
+// M7/M13: a tab whose command exits must report its exit code, and the
+// exit waiter must close the PTY before notifying (so the notification
+// cannot block on the bounded channel while the PTY stays open).
+func TestTabExitCodePropagated(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tabExitNotifyCh := make(chan int, 4)
+	ptyDataNotifyCh := make(chan int, 16)
+	tabTitleNotifyCh := make(chan tabTitleMsg, 4)
+
+	tab, err := createTab(
+		ctx, 1, 80, 24, 800, 600,
+		terminal.ThemeTokyoNight,
+		tabExitNotifyCh, ptyDataNotifyCh, tabTitleNotifyCh,
+		"sh", "-c", "exit 3",
+	)
+	if err != nil {
+		t.Skipf("PTY start not supported in this test container: %v", err)
+		return
+	}
+	defer tab.Close()
+
+	select {
+	case id := <-tabExitNotifyCh:
+		if id != 1 {
+			t.Fatalf("expected exit notification for tab 1, got %d", id)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("timed out waiting for tab exit notification")
+	}
+
+	if got := tab.ExitCode(); got != 3 {
+		t.Fatalf("expected exit code 3, got %d", got)
+	}
+	if tab.ExitState() == nil {
+		t.Fatalf("expected non-nil exit state")
+	}
+}
+
+// M9: the window's app-cursor query must follow the active tab's terminal
+// (DECCKM state), so Translate can emit SS3 sequences for every key.
+func TestIsAppCursorFollowsActiveTab(t *testing.T) {
+	off := terminal.New(80, 24)
+	on := terminal.New(80, 24)
+	if _, err := on.Write([]byte("\x1b[?1h")); err != nil {
+		t.Fatalf("enabling DECCKM failed: %v", err)
+	}
+	if !on.AppCursor() {
+		t.Fatal("expected AppCursor() true after DECCKM set")
+	}
+
+	app := &App{}
+	if app.isAppCursor() {
+		t.Fatal("expected false with no tabs")
+	}
+	app.activeTermPtr.Store(off)
+	if app.isAppCursor() {
+		t.Fatal("expected false for a normal-cursor terminal")
+	}
+	app.activeTermPtr.Store(on)
+	if !app.isAppCursor() {
+		t.Fatal("expected true for an application-cursor terminal")
+	}
+	// switchTab stores the new tab's terminal in the same pointer (kept in
+	// sync by the Store in switchTab); here we move it the same way.
+	app.activeTermPtr.Store(off)
+	if app.isAppCursor() {
+		t.Fatal("expected false after moving the pointer back")
 	}
 }

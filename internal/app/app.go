@@ -2,10 +2,13 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Kouroxsh/Terrat/assets"
@@ -14,6 +17,7 @@ import (
 	"github.com/Kouroxsh/Terrat/internal/diagnostics"
 	"github.com/Kouroxsh/Terrat/internal/paste"
 	"github.com/Kouroxsh/Terrat/internal/platform"
+	"github.com/Kouroxsh/Terrat/internal/pty"
 	"github.com/Kouroxsh/Terrat/internal/render"
 	"github.com/Kouroxsh/Terrat/internal/terminal"
 )
@@ -32,8 +36,13 @@ type App struct {
 
 	tabs         []*Tab
 	activeTabIdx int
-	nextTabID    int
-	customCmd    []string
+	// activeTermPtr tracks the active tab's terminal for the window event
+	// loop (M9): the loop runs on its own goroutine and asks, via
+	// AppCursorFunc, whether application-cursor mode is on. An atomic
+	// pointer keeps that read race-free without locking the Run loop.
+	activeTermPtr atomic.Pointer[terminal.Terminal]
+	nextTabID     int
+	customCmd     []string
 
 	currentTitle  string
 	currentWidth  uint16
@@ -61,6 +70,12 @@ type App struct {
 
 	hoveredURL *render.URLRange
 
+	// L35: the last paste-sanitizer warnings, shown in the header HUD
+	// until pasteWarningUntil (the 500ms cursor ticker redraws, so the
+	// warning clears itself shortly after expiry).
+	pasteWarning      string
+	pasteWarningUntil time.Time
+
 	isSelecting         bool
 	isDraggingScrollbar bool
 	dragScrollDelta     int
@@ -81,6 +96,12 @@ type App struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// closeOnce makes Close idempotent (L20); exitCode is the code the
+	// process should exit with once the last tab closes (M13), read by
+	// main after Run returns instead of os.Exit-ing mid-event-loop.
+	closeOnce sync.Once
+	exitCode  int
 }
 
 func NewApp(cfg *config.Config, initialTitle string, customCmd []string) (*App, error) {
@@ -106,7 +127,11 @@ func NewApp(cfg *config.Config, initialTitle string, customCmd []string) (*App, 
 	canvas := render.NewCanvas(fontEngine)
 	canvas.Resize(int(initWidth), int(initHeight))
 
-	systemIsDark := platform.DetectSystemColorScheme()
+	systemIsDark, systemSchemeKnown := platform.DetectSystemColorScheme()
+	if !systemSchemeKnown {
+		// M30: unknown is not dark — say so instead of silently assuming.
+		fmt.Fprintln(os.Stderr, "terrat: could not detect system color scheme; assuming dark")
+	}
 	activeTheme := terminal.ResolveTheme(cfg.Theme, systemIsDark)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -145,8 +170,44 @@ func NewApp(cfg *config.Config, initialTitle string, customCmd []string) (*App, 
 		return nil, fmt.Errorf("starting shell PTY: %w", err)
 	}
 	app.tabs = append(app.tabs, initTab)
+	app.activeTermPtr.Store(initTab.Term)
+	// M9: feed the active terminal's application-cursor state to the key
+	// translator, so SS3 sequences are produced for every key (including
+	// keypad and modified arrows), not just the plain arrows the old
+	// workaround in handleEvent covered.
+	win.AppCursorFunc = app.isAppCursor
+	win.AltScreenFunc = app.isAltScreen
 
 	return app, nil
+}
+
+// isAppCursor reports whether the active terminal is in application-cursor
+// mode (DECCKM). It backs Window.AppCursorFunc, which the window event loop
+// calls from its own goroutine — the atomic pointer keeps the read safe.
+// A nil terminal (no tabs) means normal-cursor mode.
+func (a *App) isAppCursor() bool {
+	if t := a.activeTermPtr.Load(); t != nil {
+		return t.AppCursor()
+	}
+	return false
+}
+
+// isAltScreen reports whether the active terminal is on the alternate
+// screen. It backs Window.AltScreenFunc (L42): Shift+PgUp/PgDn/Home/End
+// must reach fullscreen apps instead of scrolling the terminal.
+func (a *App) isAltScreen() bool {
+	if t := a.activeTermPtr.Load(); t != nil {
+		return t.IsAlt()
+	}
+	return false
+}
+
+// reportTabError surfaces a failed tab creation (M18). Without it a
+// broken shell binary made Ctrl+Shift+T / the new-tab button silently do
+// nothing at all. There is no in-window status UI yet, so the error goes
+// to stderr, where it is visible when Terrat is launched from a terminal.
+func (a *App) reportTabError(err error) {
+	fmt.Fprintf(os.Stderr, "terrat: failed to create tab: %v\n", err)
 }
 
 func (a *App) createTab(cols, rows int, width, height uint16, cmd ...string) (*Tab, error) {
@@ -177,6 +238,20 @@ func (a *App) triggerRedraw() {
 	}
 }
 
+// tabIndexByID returns the index of the tab with the given ID, or -1.
+// Hitboxes are rebuilt on every render, so a click can arrive with
+// hitboxes from before a tab closed; matching by stable tab ID (M19)
+// instead of by position keeps a stale hitbox from closing or switching
+// the wrong tab.
+func (a *App) tabIndexByID(id int) int {
+	for i, t := range a.tabs {
+		if t.ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
 func (a *App) switchTab(idx int) {
 	if idx < 0 || idx >= len(a.tabs) {
 		return
@@ -185,6 +260,7 @@ func (a *App) switchTab(idx int) {
 	a.isDraggingScrollbar = false
 	a.dragScrollDelta = 0
 	a.activeTabIdx = idx
+	a.activeTermPtr.Store(a.tabs[idx].Term)
 	a.tabs[a.activeTabIdx].HasBell = false
 	title := a.tabs[a.activeTabIdx].Title
 	if title == "" {
@@ -210,8 +286,17 @@ func (a *App) closeTab(idx int) {
 	a.tabs[len(a.tabs)-1] = nil
 	a.tabs = a.tabs[:len(a.tabs)-1]
 	if len(a.tabs) == 0 {
+		// Propagate the shell/command exit code (M13): `terrat -e <cmd>`
+		// used to always exit 0 even when the command failed. Unknown
+		// status (e.g. user closed the tab by hand) still exits 0.
+		// L20: record the code and shut down via the Run loop instead of
+		// os.Exit, so deferred cleanup in main still runs.
+		code := closingTab.ExitCode()
+		if code < 0 {
+			code = 0
+		}
+		a.exitCode = code
 		a.Close()
-		os.Exit(0)
 	}
 
 	targetIdx := a.activeTabIdx
@@ -343,6 +428,35 @@ func (a *App) updateSearchMatches() {
 	a.activeSearchIdx = 0
 }
 
+// scrollToActiveMatch scrolls the view just enough to bring the active
+// search match into view. It is called only for user-initiated search
+// actions (typing, navigating); background recomputes on PTY output or
+// resize deliberately do not move the view.
+func (a *App) scrollToActiveMatch() {
+	if len(a.searchMatches) == 0 || a.activeSearchIdx < 0 || a.activeSearchIdx >= len(a.searchMatches) {
+		return
+	}
+	if a.activeTabIdx >= len(a.tabs) {
+		return
+	}
+	term := a.tabs[a.activeTabIdx].Term
+	if term.IsAlt() {
+		return
+	}
+	absRow := a.searchMatches[a.activeSearchIdx].Row
+	sbLen := term.ScrollbackLen()
+	rows := term.Rows()
+	if rows <= 0 {
+		return
+	}
+	top := sbLen - term.ScrollOff() // absolute row at viewport row 0
+	if absRow < top {
+		term.SetScrollOff(sbLen - absRow)
+	} else if absRow >= top+rows {
+		term.SetScrollOff(sbLen - (absRow - rows + 1))
+	}
+}
+
 func (a *App) renderScreen(cursorBlink bool) {
 	if len(a.tabs) == 0 || a.activeTabIdx >= len(a.tabs) {
 		return
@@ -359,6 +473,18 @@ func (a *App) renderScreen(cursorBlink bool) {
 
 	activeTerm := a.tabs[a.activeTabIdx].Term
 	hud := fmt.Sprintf("%dx%d", a.canvas.Cols(), a.canvas.Rows())
+	// L35: sanitizer warnings were computed and then dropped — show them
+	// in the header for a few seconds instead of the dimensions.
+	if a.pasteWarning != "" {
+		if time.Now().Before(a.pasteWarningUntil) {
+			hud = a.pasteWarning
+			if len([]rune(hud)) > 60 {
+				hud = string([]rune(hud)[:57]) + "..."
+			}
+		} else {
+			a.pasteWarning = ""
+		}
+	}
 	a.canvas.Render(activeTerm, cursorBlink, a.currentTitle, hud, tabInfos, a.searchMatches, a.activeSearchIdx, a.hoveredURL, a.activeGhostText, a.activeDiag)
 
 	if a.isSearchOpen {
@@ -374,6 +500,16 @@ func (a *App) renderScreen(cursorBlink bool) {
 	}
 
 	a.win.Blit(a.canvas.Pixels, a.currentWidth, a.currentHeight)
+}
+
+// writePTY sends data to a tab's PTY. Write errors used to be silently
+// dropped everywhere (L19): typing into a dead PTY vanished without a
+// trace. Real failures are now logged; a closed PTY is expected during
+// shutdown and stays quiet.
+func writePTY(p *pty.TerminalPTY, data []byte) {
+	if _, err := p.Write(data); err != nil && !errors.Is(err, os.ErrClosed) {
+		fmt.Fprintf(os.Stderr, "terrat: failed to write to PTY: %v\n", err)
+	}
 }
 
 func (a *App) doWritePastedText(text string) {
@@ -396,7 +532,7 @@ func (a *App) doWritePastedText(text string) {
 	} else {
 		toSend = []byte(text)
 	}
-	_, _ = activePTY.Write(toSend)
+	writePTY(activePTY, toSend)
 	activeTerm.ResetScroll()
 	a.triggerRedraw()
 }
@@ -411,6 +547,12 @@ func (a *App) handlePastedData(pastedBytes []byte) {
 	if a.config.SanitizePaste {
 		res := paste.Sanitize(raw)
 		text = res.Sanitized
+		// L35: the warnings used to be computed and discarded — keep
+		// them for the HUD so the user sees what was stripped.
+		if len(res.Warnings) > 0 {
+			a.pasteWarning = strings.Join(res.Warnings, "; ")
+			a.pasteWarningUntil = time.Now().Add(4 * time.Second)
+		}
 	} else {
 		text = raw
 	}
@@ -418,6 +560,20 @@ func (a *App) handlePastedData(pastedBytes []byte) {
 	if text == "" {
 		return
 	}
+
+	// L16: the ghost-text/diagnostics guess tracks the input line, so a
+	// paste must update it too: a single-line paste appends to the line,
+	// a multi-line paste executes it (and anything pasted while an app
+	// runs is not shell input at all).
+	activeTerm := a.tabs[a.activeTabIdx].Term
+	activePTY := a.tabs[a.activeTabIdx].PTY
+	if !activePTY.IsForegroundShell() || a.isPasswordPrompt(activeTerm) || strings.Contains(text, "\n") {
+		a.currentInputBuffer = ""
+	} else {
+		a.currentInputBuffer += text
+	}
+	a.updateGhostText()
+	a.updateDiagnostics()
 
 	a.doWritePastedText(text)
 }
@@ -461,19 +617,42 @@ func (a *App) updateScrollbar(eventY int) {
 	a.triggerRedraw()
 }
 
+// ExitCode is the process exit code recorded when the last tab closed
+// (M13/L20); main exits with it after Run returns.
+func (a *App) ExitCode() int {
+	return a.exitCode
+}
+
 func (a *App) Close() {
-	if a.cancel != nil {
-		a.cancel()
-	}
-	for _, t := range a.tabs {
-		t.Close()
-	}
-	if a.win != nil {
-		a.win.Close()
-	}
-	if a.fontEngine != nil {
-		a.fontEngine.Close()
-	}
+	a.closeOnce.Do(func() {
+		if a.cancel != nil {
+			a.cancel()
+		}
+		for _, t := range a.tabs {
+			t.Close()
+		}
+		// Wait briefly for the tab goroutines (PTY readers, title and
+		// response pumps) to finish, so process exit cannot race them.
+		// The context is already cancelled, so a stuck goroutine can
+		// only delay this by the timeout.
+		done := make(chan struct{})
+		go func() {
+			for _, t := range a.tabs {
+				<-t.Done()
+			}
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+		}
+		if a.win != nil {
+			a.win.Close()
+		}
+		if a.fontEngine != nil {
+			a.fontEngine.Close()
+		}
+	})
 }
 
 func (a *App) Run() error {

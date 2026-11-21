@@ -68,3 +68,23 @@ func TestSanitizeZeroWidthNonJoiner(t *testing.T) {
 		t.Fatalf("expected no warnings for zero-width non-joiner, got %v", res.Warnings)
 	}
 }
+
+// M22: C1 controls must be stripped — U+009B is a single-byte CSI.
+func TestSanitizeC1Controls(t *testing.T) {
+	res := Sanitize("ls\u009b31mfoo\u009c")
+	if res.Sanitized != "ls31mfoo" {
+		t.Fatalf("expected C1 controls stripped, got %q", res.Sanitized)
+	}
+	if len(res.Warnings) == 0 {
+		t.Fatal("expected a warning for stripped invisible characters")
+	}
+}
+
+// M23: Arabic Letter Mark, invisible operators, Mongolian vowel separator
+// and combining grapheme joiner must be stripped.
+func TestSanitizeInvisibleUnicodeExtended(t *testing.T) {
+	res := Sanitize("a\u061Cb\u2061c\u2064d\u180Ee\u034Ff")
+	if res.Sanitized != "abcdef" {
+		t.Fatalf("expected invisible chars stripped, got %q", res.Sanitized)
+	}
+}

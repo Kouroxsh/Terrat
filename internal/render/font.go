@@ -3,23 +3,37 @@ package render
 import (
 	"image"
 	"os"
+	"sync"
 	"unicode"
 
 	"github.com/golang/freetype/truetype"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/font/opentype"
+	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
 )
 
+// GlyphMask is one rasterized glyph: Alpha holds Width*Height coverage
+// bytes (0 = transparent, 255 = opaque). OriginX is how far the mask
+// extends left of the cell origin: glyphs with a negative left bearing
+// are rendered with a left pad so their ink is not clipped, and the
+// blit functions shift the mask left by OriginX (L62). It is 0 for
+// normal glyphs, so a mask's cell width is Width-OriginX.
 type GlyphMask struct {
-	Width  int
-	Height int
-	Alpha  []byte
+	Width   int
+	Height  int
+	OriginX int
+	Alpha   []byte
 }
 
+// fallbackFont is one fallback face plus a coverage test. The coverage
+// test uses the underlying sfnt font because freetype's truetype parser
+// cannot read CFF-flavoured fonts at all (see loadFallbacks).
 type fallbackFont struct {
 	face font.Face
-	ttf  *truetype.Font
+	sfnt *sfnt.Font
+	has  func(rune) bool
 }
 
 type FontEngine struct {
@@ -30,11 +44,27 @@ type FontEngine struct {
 	ttf        *truetype.Font
 	fontSize   float64
 
+	// mu guards the glyph caches and the metrics above. GetGlyph (and
+	// friends) run on the render path while SetFontSize runs from
+	// event handling; without it a concurrent zoom and render race
+	// on the cache maps (L47). rasterizeRune is always called with
+	// mu held; it takes fbMu (via fallbackSnapshot) while holding
+	// mu, the same order SetFontSize uses.
+	mu sync.RWMutex
+
 	fallbacks       []fallbackFont
 	fallbacksLoaded bool
+	fbStarted       bool
+	// fbMu guards fallbacks/fallbacksLoaded/fbStarted: fallbacks are loaded
+	// in the background (M28), so the render path only ever snapshots the
+	// slice. fallbacksLoaded is set only once loading has finished.
+	fbMu sync.RWMutex
 
 	asciiCache [96][2]*GlyphMask
 	otherCache map[uint64]*GlyphMask
+	// wideCache holds double-width glyph masks (2*charWidth wide) for wide
+	// runes, keyed the same way as otherCache.
+	wideCache map[uint64]*GlyphMask
 }
 
 var candidateTTFFonts = []string{
@@ -56,8 +86,17 @@ var candidateFallbackFonts = []string{
 }
 
 func NewFontEngine(fontSize float64) (*FontEngine, error) {
+	// M15: clamp to the supported range so an out-of-range size cannot
+	// blow up glyph precaching or overflow the uint16 window dimensions.
+	if fontSize < 7.0 {
+		fontSize = 7.0
+	}
+	if fontSize > 36.0 {
+		fontSize = 36.0
+	}
 	fe := &FontEngine{
 		otherCache: make(map[uint64]*GlyphMask),
+		wideCache:  make(map[uint64]*GlyphMask),
 		fontSize:   fontSize,
 	}
 
@@ -108,54 +147,122 @@ func NewFontEngine(fontSize float64) (*FontEngine, error) {
 
 	fe.precacheASCII()
 
+	// Load fallback fonts in the background (M28) instead of lazily on the
+	// first non-ASCII glyph, which used to stall the render loop.
+	fe.startFallbackLoad()
+
 	return fe, nil
 }
 
-func (fe *FontEngine) loadFallbacks(fontSize float64) {
-	fe.fallbacksLoaded = true
+// loadFallbacks reads the candidate fallback fonts. It must only ever be
+// called from a background goroutine (M28): it reads up to ~16 MB of font
+// data synchronously, which used to freeze the UI when it ran lazily under
+// the terminal read-lock on the first non-ASCII glyph. It is idempotent.
+//
+// M8: the old code used freetype's truetype.Parse here, which rejects TTC
+// files whose fonts are CFF-flavoured (the Noto CJK .ttc files are OTTO,
+// not TrueType) — so the CJK fallback never loaded. opentype.ParseCollection
+// handles single TTF/OTF fonts and TTC/OTC collections alike.
+func (fe *FontEngine) loadFallbacks(fontSize float64, paths []string) {
+	fe.fbMu.Lock()
+	if fe.fbStarted {
+		fe.fbMu.Unlock()
+		return
+	}
+	fe.fbStarted = true
+	fe.fbMu.Unlock()
+	defer func() {
+		fe.fbMu.Lock()
+		fe.fallbacksLoaded = true
+		fe.fbMu.Unlock()
+	}()
 
-	for _, path := range candidateFallbackFonts {
+	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
-		ttf, err := truetype.Parse(data)
+		col, err := opentype.ParseCollection(data)
 		if err != nil {
 			continue
 		}
-		face := truetype.NewFace(ttf, &truetype.Options{
+		// The first font of a collection covers the script (e.g. CJK);
+		// the remaining entries are locale variants of the same design.
+		sfntFont, err := col.Font(0)
+		if err != nil {
+			continue
+		}
+		face, err := opentype.NewFace(sfntFont, &opentype.FaceOptions{
 			Size:    fontSize,
 			DPI:     72,
 			Hinting: font.HintingFull,
 		})
-		fe.fallbacks = append(fe.fallbacks, fallbackFont{
+		if err != nil {
+			continue
+		}
+		fb := fallbackFont{
 			face: face,
-			ttf:  ttf,
-		})
+			sfnt: sfntFont,
+			has: func(r rune) bool {
+				idx, err := sfntFont.GlyphIndex(&sfnt.Buffer{}, r)
+				return err == nil && idx != 0
+			},
+		}
+		fe.fbMu.Lock()
+		fe.fallbacks = append(fe.fallbacks, fb)
+		fe.fbMu.Unlock()
 	}
 }
 
+// fallbackSnapshot returns the currently loaded fallback fonts. Safe to
+// call from the render path.
+func (fe *FontEngine) fallbackSnapshot() []fallbackFont {
+	fe.fbMu.RLock()
+	defer fe.fbMu.RUnlock()
+	out := make([]fallbackFont, len(fe.fallbacks))
+	copy(out, fe.fallbacks)
+	return out
+}
+
+// startFallbackLoad kicks off one background load of the fallback fonts.
+// The candidate list is snapshotted here so the loader never reads the
+// package-level variable from the goroutine.
+func (fe *FontEngine) startFallbackLoad() {
+	paths := append([]string(nil), candidateFallbackFonts...)
+	go fe.loadFallbacks(fe.fontSize, paths)
+}
+
 func (fe *FontEngine) precacheASCII() {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
 	for r := rune(32); r < 127; r++ {
 		idx := int(r - 32)
-		fe.asciiCache[idx][0] = fe.rasterizeRune(r, false)
-		fe.asciiCache[idx][1] = fe.rasterizeRune(r, true)
+		fe.asciiCache[idx][0] = fe.rasterizeRune(r, false, fe.charWidth)
+		fe.asciiCache[idx][1] = fe.rasterizeRune(r, true, fe.charWidth)
 	}
 }
 
 func (fe *FontEngine) CharWidth() int {
+	fe.mu.RLock()
+	defer fe.mu.RUnlock()
 	return fe.charWidth
 }
 
 func (fe *FontEngine) CharHeight() int {
+	fe.mu.RLock()
+	defer fe.mu.RUnlock()
 	return fe.charHeight
 }
 
 func (fe *FontEngine) Baseline() int {
+	fe.mu.RLock()
+	defer fe.mu.RUnlock()
 	return fe.baseline
 }
 
 func (fe *FontEngine) FontSize() float64 {
+	fe.mu.RLock()
+	defer fe.mu.RUnlock()
 	return fe.fontSize
 }
 
@@ -166,10 +273,11 @@ func (fe *FontEngine) SetFontSize(size float64) error {
 	if size > 36.0 {
 		size = 36.0
 	}
-	if fe.fontSize == size {
+	if fe.FontSize() == size {
 		return nil
 	}
 
+	fe.mu.Lock()
 	fe.fontSize = size
 	if fe.ttf != nil {
 		face := truetype.NewFace(fe.ttf, &truetype.Options{
@@ -205,35 +313,46 @@ func (fe *FontEngine) SetFontSize(size float64) error {
 		fe.charHeight = 10
 	}
 
+	// A size change invalidates every cached glyph.
+	fe.otherCache = make(map[uint64]*GlyphMask)
+	fe.wideCache = make(map[uint64]*GlyphMask)
+	fe.mu.Unlock()
+
+	fe.fbMu.Lock()
 	for i := range fe.fallbacks {
 		_ = fe.fallbacks[i].face.Close()
-		fe.fallbacks[i].face = truetype.NewFace(fe.fallbacks[i].ttf, &truetype.Options{
+		if face, err := opentype.NewFace(fe.fallbacks[i].sfnt, &opentype.FaceOptions{
 			Size: size, DPI: 72, Hinting: font.HintingFull,
-		})
+		}); err == nil {
+			fe.fallbacks[i].face = face
+		}
 	}
-	fe.otherCache = make(map[uint64]*GlyphMask)
+	fe.fbMu.Unlock()
 	fe.precacheASCII()
 	return nil
 }
 
 func (fe *FontEngine) ZoomIn() bool {
-	if fe.fontSize >= 32.0 {
+	// L48: the cap used to be 32 while SetFontSize allows up to 36,
+	// so zooming in stopped short of the largest configured size.
+	if fe.FontSize() >= 36.0 {
 		return false
 	}
-	_ = fe.SetFontSize(fe.fontSize + 1.0)
+	_ = fe.SetFontSize(fe.FontSize() + 1.0)
 	return true
 }
 
 func (fe *FontEngine) ZoomOut() bool {
-	if fe.fontSize <= 8.0 {
+	// L48: the floor used to be 8 while SetFontSize allows down to 7.
+	if fe.FontSize() <= 7.0 {
 		return false
 	}
-	_ = fe.SetFontSize(fe.fontSize - 1.0)
+	_ = fe.SetFontSize(fe.FontSize() - 1.0)
 	return true
 }
 
 func (fe *FontEngine) ZoomReset() bool {
-	if fe.fontSize == 13.0 {
+	if fe.FontSize() == 13.0 {
 		return false
 	}
 	_ = fe.SetFontSize(13.0)
@@ -250,6 +369,9 @@ func (fe *FontEngine) GetGlyph(r rune, bold bool) *GlyphMask {
 		boldIdx = 1
 	}
 
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+
 	if r >= 32 && r < 127 {
 		idx := int(r - 32)
 		mask := fe.asciiCache[idx][boldIdx]
@@ -263,51 +385,97 @@ func (fe *FontEngine) GetGlyph(r rune, bold bool) *GlyphMask {
 		return mask
 	}
 
-	mask := fe.rasterizeRune(r, bold)
+	mask := fe.rasterizeRune(r, bold, fe.charWidth)
 	if len(fe.otherCache) >= 4096 {
-		fe.otherCache = make(map[uint64]*GlyphMask, 1024)
+		evictQuarter(fe.otherCache)
 	}
 	fe.otherCache[key] = mask
 	return mask
 }
 
-func (fe *FontEngine) rasterizeRune(r rune, bold bool) *GlyphMask {
-	if box := renderBoxOrBlock(r, fe.charWidth, fe.charHeight); box != nil {
+// evictQuarter drops roughly a quarter of a glyph cache's entries
+// (L47). The old code replaced the whole map once it hit 4096
+// entries, so every cached glyph re-rasterized on its next use — a
+// visible hitch after any session with varied text. Map iteration
+// order is random, so the evicted quarter is effectively random.
+func evictQuarter(m map[uint64]*GlyphMask) {
+	n := 0
+	for k := range m {
+		if n%4 == 0 {
+			delete(m, k)
+		}
+		n++
+	}
+}
+
+// GetWideGlyph returns the glyph mask for a wide rune (CJK, emoji), sized
+// 2*CharWidth so it spans both cells the rune occupies. Non-wide runes
+// fall back to GetGlyph.
+func (fe *FontEngine) GetWideGlyph(r rune, bold bool) *GlyphMask {
+	if unicode.Is(unicode.Arabic, r) {
+		r = unicode.ReplacementChar
+	}
+	boldIdx := 0
+	if bold {
+		boldIdx = 1
+	}
+	key := (uint64(r) << 1) | uint64(boldIdx)
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	if mask, ok := fe.wideCache[key]; ok {
+		return mask
+	}
+	mask := fe.rasterizeRune(r, bold, 2*fe.charWidth)
+	if len(fe.wideCache) >= 4096 {
+		evictQuarter(fe.wideCache)
+	}
+	fe.wideCache[key] = mask
+	return mask
+}
+
+func (fe *FontEngine) rasterizeRune(r rune, bold bool, width int) *GlyphMask {
+	if box := renderBoxOrBlock(r, width, fe.charHeight); box != nil {
 		return box
 	}
 
 	useFace := fe.face
 	found := true
 
-	if fe.ttf != nil {
-		if fe.ttf.Index(r) == 0 {
-			if !fe.fallbacksLoaded {
-				fe.loadFallbacks(fe.fontSize)
-			}
-			found = false
-			for _, fb := range fe.fallbacks {
-				if fb.ttf != nil {
-					if fb.ttf.Index(r) != 0 {
-						useFace = fb.face
-						found = true
-						break
-					}
-				}
+	// Non-ASCII runes the main face lacks are served from the fallback
+	// fonts, which are loaded in the background (M28) — this path never
+	// does file I/O, so it is safe under the terminal read-lock. When no
+	// main TTF was found at all (basicfont fallback), every non-ASCII
+	// rune goes through the fallbacks too.
+	if r >= 128 && (fe.ttf == nil || fe.ttf.Index(r) == 0) {
+		found = false
+		for _, fb := range fe.fallbackSnapshot() {
+			if fb.has(r) {
+				useFace = fb.face
+				found = true
+				break
 			}
 		}
 	}
 
 	if !found {
-		return &GlyphMask{
-			Width:  fe.charWidth,
-			Height: fe.charHeight,
-			Alpha:  make([]byte, fe.charWidth*fe.charHeight),
-		}
+		// M29: a missing glyph renders as a visible hollow box (.notdef),
+		// not an invisible blank that is indistinguishable from a space.
+		return renderNotdef(width, fe.charHeight)
 	}
 
-	dst := image.NewAlpha(image.Rect(0, 0, fe.charWidth, fe.charHeight))
+	// L62: glyphs whose ink starts left of the origin (negative left
+	// bearing) used to be clipped at the image's left edge — the
+	// raster image was exactly the cell width and the drawer draws
+	// from x=0. Render with a left pad and record it in OriginX so
+	// the blit can place the mask left of the cell origin.
+	pad := 0
+	if b, _, ok := useFace.GlyphBounds(r); ok && b.Min.X < 0 {
+		pad = int((-b.Min.X + 63) >> 6)
+	}
 
-	dot := fixed.P(0, fe.baseline)
+	dst := image.NewAlpha(image.Rect(0, 0, width+pad, fe.charHeight))
+
+	dot := fixed.P(pad, fe.baseline)
 	d := &font.Drawer{
 		Dst:  dst,
 		Src:  image.Opaque,
@@ -317,20 +485,21 @@ func (fe *FontEngine) rasterizeRune(r rune, bold bool) *GlyphMask {
 	d.DrawString(string(r))
 
 	if bold {
-		d.Dot = fixed.P(1, fe.baseline)
+		d.Dot = fixed.P(pad+1, fe.baseline)
 		d.DrawString(string(r))
 	}
 
 	mask := &GlyphMask{
-		Width:  fe.charWidth,
-		Height: fe.charHeight,
-		Alpha:  make([]byte, fe.charWidth*fe.charHeight),
+		Width:   width + pad,
+		Height:  fe.charHeight,
+		OriginX: pad,
+		Alpha:   make([]byte, (width+pad)*fe.charHeight),
 	}
 
 	for y := 0; y < fe.charHeight; y++ {
-		for x := 0; x < fe.charWidth; x++ {
+		for x := 0; x < width+pad; x++ {
 			c := dst.AlphaAt(x, y)
-			mask.Alpha[y*fe.charWidth+x] = c.A
+			mask.Alpha[y*(width+pad)+x] = c.A
 		}
 	}
 
@@ -338,10 +507,13 @@ func (fe *FontEngine) rasterizeRune(r rune, bold bool) *GlyphMask {
 }
 
 func (fe *FontEngine) Close() {
-	if fe.face != nil && fe.face != basicfont.Face7x13 {
-		_ = fe.face.Close()
+	fe.mu.Lock()
+	face := fe.face
+	fe.mu.Unlock()
+	if face != nil && face != basicfont.Face7x13 {
+		_ = face.Close()
 	}
-	for _, fb := range fe.fallbacks {
+	for _, fb := range fe.fallbackSnapshot() {
 		if fb.face != nil && fb.face != basicfont.Face7x13 {
 			_ = fb.face.Close()
 		}
@@ -672,12 +844,49 @@ func renderBoxOrBlock(r rune, w, h int) *GlyphMask {
 	return nil
 }
 
+// renderNotdef draws the conventional hollow .notdef box for a rune no
+// loaded font covers (M29). A visible box beats an invisible blank that
+// looks exactly like a space.
+func renderNotdef(w, h int) *GlyphMask {
+	if w <= 0 || h <= 0 {
+		return nil
+	}
+	mask := &GlyphMask{
+		Width:  w,
+		Height: h,
+		Alpha:  make([]byte, w*h),
+	}
+	set := func(x, y int) {
+		if x >= 0 && x < w && y >= 0 && y < h {
+			mask.Alpha[y*w+x] = 0xff
+		}
+	}
+	// 1px border, inset by 1px so it does not touch neighbouring cells.
+	for x := 1; x < w-1; x++ {
+		set(x, 1)
+		set(x, h-2)
+	}
+	for y := 1; y < h-1; y++ {
+		set(1, y)
+		set(w-2, y)
+	}
+	return mask
+}
+
 func DrawGlyphBlit(buf []byte, stride int, cellX, cellY int, mask *GlyphMask, fgPixel, bgPixel uint32, underline bool, baseline int) {
 	if mask == nil || stride <= 0 || mask.Width <= 0 || mask.Height <= 0 || len(mask.Alpha) < mask.Width*mask.Height {
 		return
 	}
 	width := mask.Width
 	height := mask.Height
+
+	// L62: the mask may extend left of the cell origin (OriginX > 0
+	// for glyphs with a negative left bearing). The mask's cell
+	// width is Width-OriginX; columns outside the cell only paint
+	// where the glyph has ink, so background there never erases the
+	// previous cell's right edge.
+	originX := cellX - mask.OriginX
+	cellW := mask.Width - mask.OriginX
 
 	fgR := byte(fgPixel >> 16)
 	fgG := byte(fgPixel >> 8)
@@ -692,8 +901,8 @@ func DrawGlyphBlit(buf []byte, stride int, cellX, cellY int, mask *GlyphMask, fg
 		if py < 0 || py >= len(buf)/stride {
 			continue
 		}
-		startX := max(0, -cellX)
-		endX := min(width, stride/4-cellX)
+		startX := max(0, -originX)
+		endX := min(width, stride/4-originX)
 		if startX >= endX {
 			continue
 		}
@@ -701,10 +910,16 @@ func DrawGlyphBlit(buf []byte, stride int, cellX, cellY int, mask *GlyphMask, fg
 		maskRowOffset := y * width
 
 		for x := startX; x < endX; x++ {
-			pixelOffset := bufRowOffset + (cellX+x)*4
+			pixelOffset := bufRowOffset + (originX+x)*4
 
 			alpha := int(mask.Alpha[maskRowOffset+x])
 			if alpha == 0 {
+				// Outside the cell (the left overhang) a
+				// transparent pixel must not paint background
+				// over the neighbouring cell.
+				if x < mask.OriginX {
+					continue
+				}
 				buf[pixelOffset+0] = bgB
 				buf[pixelOffset+1] = bgG
 				buf[pixelOffset+2] = bgR
@@ -732,7 +947,7 @@ func DrawGlyphBlit(buf []byte, stride int, cellX, cellY int, mask *GlyphMask, fg
 		py := cellY + baseline + 1
 		bufRowOffset := py * stride
 		startX := max(0, -cellX)
-		endX := min(width, stride/4-cellX)
+		endX := min(cellW, stride/4-cellX)
 		for x := startX; x < endX; x++ {
 			pixelOffset := bufRowOffset + (cellX+x)*4
 			buf[pixelOffset+0] = fgB
@@ -775,11 +990,12 @@ func FillRect(buf []byte, stride int, x, y, w, h int, pixel uint32) {
 }
 
 func (fe *FontEngine) DrawString(buf []byte, stride int, startX, startY int, text string, fgPixel, bgPixel uint32, bold bool) {
+	charW := fe.CharWidth()
 	curX := startX
 	for _, ch := range text {
 		mask := fe.GetGlyph(ch, bold)
-		DrawGlyphBlit(buf, stride, curX, startY, mask, fgPixel, bgPixel, false, fe.baseline)
-		curX += fe.charWidth
+		DrawGlyphBlit(buf, stride, curX, startY, mask, fgPixel, bgPixel, false, fe.Baseline())
+		curX += charW
 	}
 }
 
@@ -790,6 +1006,12 @@ func DrawGlyphBlitTransparent(buf []byte, stride int, cellX, cellY int, mask *Gl
 	width := mask.Width
 	height := mask.Height
 
+	// L62: see DrawGlyphBlit — the mask may extend left of the cell
+	// origin. This variant never paints background, so only the
+	// origin shift and the underline span need adjusting.
+	originX := cellX - mask.OriginX
+	cellW := mask.Width - mask.OriginX
+
 	fgR := byte(fgPixel >> 16)
 	fgG := byte(fgPixel >> 8)
 	fgB := byte(fgPixel)
@@ -799,8 +1021,8 @@ func DrawGlyphBlitTransparent(buf []byte, stride int, cellX, cellY int, mask *Gl
 		if py < 0 || py >= len(buf)/stride {
 			continue
 		}
-		startX := max(0, -cellX)
-		endX := min(width, stride/4-cellX)
+		startX := max(0, -originX)
+		endX := min(width, stride/4-originX)
 		if startX >= endX {
 			continue
 		}
@@ -812,7 +1034,7 @@ func DrawGlyphBlitTransparent(buf []byte, stride int, cellX, cellY int, mask *Gl
 			if alpha == 0 {
 				continue
 			}
-			pixelOffset := bufRowOffset + (cellX+x)*4
+			pixelOffset := bufRowOffset + (originX+x)*4
 
 			if alpha >= 255 {
 				buf[pixelOffset+0] = fgB
@@ -833,7 +1055,7 @@ func DrawGlyphBlitTransparent(buf []byte, stride int, cellX, cellY int, mask *Gl
 		py := cellY + baseline + 1
 		bufRowOffset := py * stride
 		startX := max(0, -cellX)
-		endX := min(width, stride/4-cellX)
+		endX := min(cellW, stride/4-cellX)
 		for x := startX; x < endX; x++ {
 			pixelOffset := bufRowOffset + (cellX+x)*4
 			buf[pixelOffset+0] = fgB
@@ -852,18 +1074,20 @@ func MinecraftShadow(pixel uint32) uint32 {
 }
 
 func (fe *FontEngine) DrawStringShadow(buf []byte, stride int, startX, startY int, text string, fgPixel, shadowPixel uint32, bold bool) {
+	charW := fe.CharWidth()
+	baseline := fe.Baseline()
 	curX := startX + 1
 	curY := startY + 1
 	for _, ch := range text {
 		mask := fe.GetGlyph(ch, bold)
-		DrawGlyphBlitTransparent(buf, stride, curX, curY, mask, shadowPixel, false, fe.baseline)
-		curX += fe.charWidth
+		DrawGlyphBlitTransparent(buf, stride, curX, curY, mask, shadowPixel, false, baseline)
+		curX += charW
 	}
 	curX = startX
 	for _, ch := range text {
 		mask := fe.GetGlyph(ch, bold)
-		DrawGlyphBlitTransparent(buf, stride, curX, startY, mask, fgPixel, false, fe.baseline)
-		curX += fe.charWidth
+		DrawGlyphBlitTransparent(buf, stride, curX, startY, mask, fgPixel, false, baseline)
+		curX += charW
 	}
 }
 

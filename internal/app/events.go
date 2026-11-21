@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 	"unicode"
@@ -63,7 +62,7 @@ func (a *App) sendMouseEvent(btn int, press bool, pixelX, pixelY int, state uint
 			terminator = 'm'
 		}
 		seq := fmt.Sprintf("\x1b[<%d;%d;%d%c", cb, col, row, terminator)
-		_, _ = curPTY.Write([]byte(seq))
+		writePTY(curPTY, []byte(seq))
 		return true
 	} else if press {
 		if col > 223 {
@@ -73,7 +72,7 @@ func (a *App) sendMouseEvent(btn int, press bool, pixelX, pixelY int, state uint
 			row = 223
 		}
 		b := []byte{0x1b, '[', 'M', byte(cb + 32), byte(col + 32), byte(row + 32)}
-		_, _ = curPTY.Write(b)
+		writePTY(curPTY, b)
 		return true
 	}
 	return false
@@ -105,6 +104,7 @@ func (a *App) executeSettingsAction(item render.PrefOption, isSecondaryAction bo
 		if a.isSearchOpen {
 			a.isPrefOpen = false
 			a.updateSearchMatches()
+			a.scrollToActiveMatch()
 		}
 	case "theme":
 		themesList := []string{"tokyo-night", "catppuccin-mocha", "minecraft", "tokyo-day", "solarized-light", "auto"}
@@ -157,6 +157,12 @@ func (a *App) executeSettingsAction(item render.PrefOption, isSecondaryAction bo
 }
 
 func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEventCh <-chan platform.Event) bool {
+	// L21: a window close request must be honoured even with no valid
+	// active tab — the tab guard below used to swallow it, so the window
+	// could not be closed via WM_DELETE_WINDOW at all in that state.
+	if _, isClose := ev.(platform.CloseRequestEvent); isClose {
+		return true
+	}
 	if a.activeTabIdx < 0 || a.activeTabIdx >= len(a.tabs) {
 		return false
 	}
@@ -232,7 +238,9 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 			isCtrl := (e.State & platform.ModCtrl) != 0
 			if isCtrl && int(e.EventY) >= render.HeaderHeight {
 				cx, cy := a.toCellCoords(int(e.EventX), int(e.EventY))
-				rowStr := activeTerm.GetRowString(cy)
+				// L11: cy is a screen (viewport) row; when scrolled the
+				// visible row is a scrollback row, not grid row cy.
+				rowStr := activeTerm.GetViewportRowString(cy)
 				matches := urlRegex.FindAllStringIndex(rowStr, -1)
 				var foundURL *render.URLRange
 				for _, m := range matches {
@@ -384,8 +392,10 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 
 			if int(e.EventY) < render.HeaderHeight {
 				if int(e.EventX) >= int(a.currentWidth)-36 {
+					// L20: shut down via the Run loop (returning true)
+					// instead of os.Exit, so deferred cleanup runs.
 					a.Close()
-					os.Exit(0)
+					return true
 				} else if int(e.EventX) >= int(a.currentWidth)-72 && int(e.EventX) < int(a.currentWidth)-36 {
 					a.win.ToggleMaximize()
 					return false
@@ -401,23 +411,27 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 
 				if a.canvas.NewTabHitBox[1] > 0 && int(e.EventX) >= a.canvas.NewTabHitBox[0] && int(e.EventX) <= a.canvas.NewTabHitBox[1] {
 					newTab, err := a.createTab(a.canvas.Cols(), a.canvas.Rows(), a.currentWidth, a.currentHeight)
-					if err == nil {
+					if err != nil {
+						a.reportTabError(err)
+					} else {
 						a.tabs = append(a.tabs, newTab)
 						a.switchTab(len(a.tabs) - 1)
 					}
 					return false
 				}
 
-				for idx, thb := range a.canvas.TabHitBoxes {
+				for _, thb := range a.canvas.TabHitBoxes {
 					if int(e.EventX) >= thb.CloseX && int(e.EventX) <= thb.CloseEndX {
-						a.closeTab(idx)
+						if idx := a.tabIndexByID(thb.ID); idx >= 0 {
+							a.closeTab(idx)
+						}
 						return false
 					}
 				}
 
-				for idx, thb := range a.canvas.TabHitBoxes {
+				for _, thb := range a.canvas.TabHitBoxes {
 					if int(e.EventX) >= thb.StartX && int(e.EventX) <= thb.EndX {
-						if idx != a.activeTabIdx {
+						if idx := a.tabIndexByID(thb.ID); idx >= 0 && idx != a.activeTabIdx {
 							a.switchTab(idx)
 						}
 						return false
@@ -497,9 +511,11 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 			a.triggerRedraw()
 		case 2:
 			if int(e.EventY) < render.HeaderHeight {
-				for idx, thb := range a.canvas.TabHitBoxes {
+				for _, thb := range a.canvas.TabHitBoxes {
 					if int(e.EventX) >= thb.StartX && int(e.EventX) <= thb.EndX {
-						a.closeTab(idx)
+						if idx := a.tabIndexByID(thb.ID); idx >= 0 {
+							a.closeTab(idx)
+						}
 						return false
 					}
 				}
@@ -549,7 +565,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 				}
 			}
 			if activeTerm.IsAlt() {
-				_, _ = activePTY.Write([]byte("\x1b[A\x1b[A\x1b[A"))
+				writePTY(activePTY, []byte("\x1b[A\x1b[A\x1b[A"))
 			} else {
 				activeTerm.Scroll(3)
 				a.triggerRedraw()
@@ -575,7 +591,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 				}
 			}
 			if activeTerm.IsAlt() {
-				_, _ = activePTY.Write([]byte("\x1b[B\x1b[B\x1b[B"))
+				writePTY(activePTY, []byte("\x1b[B\x1b[B\x1b[B"))
 			} else {
 				activeTerm.Scroll(-3)
 				a.triggerRedraw()
@@ -617,26 +633,12 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 		}
 
 	case platform.KeyPressEvent:
+		// NB: application-cursor (SS3) sequences are produced by Translate
+		// itself now (M9): the window passes the active terminal's DECCKM
+		// state in, so no rewriting is needed here.
 		keysym := e.KeySym
 		data := string(e.Bytes)
 		action := e.Action
-
-		if activeTerm.AppCursor() && (e.State&(platform.ModCtrl|platform.ModAlt|platform.ModShift)) == 0 {
-			switch keysym {
-			case 0xff52:
-				data = "\x1bOA"
-			case 0xff54:
-				data = "\x1bOB"
-			case 0xff53:
-				data = "\x1bOC"
-			case 0xff51:
-				data = "\x1bOD"
-			case 0xff50:
-				data = "\x1bOH"
-			case 0xff57:
-				data = "\x1bOF"
-			}
-		}
 
 		if action == platform.ActionPreferences {
 			a.isPrefOpen = !a.isPrefOpen
@@ -695,6 +697,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 				a.searchMatches = nil
 			} else {
 				a.updateSearchMatches()
+				a.scrollToActiveMatch()
 			}
 			a.triggerRedraw()
 			return false
@@ -717,6 +720,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 					} else {
 						a.activeSearchIdx = (a.activeSearchIdx + 1) % len(a.searchMatches)
 					}
+					a.scrollToActiveMatch()
 					a.triggerRedraw()
 				}
 			case 0xff08:
@@ -724,16 +728,19 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 					rs := []rune(a.searchQuery)
 					a.searchQuery = string(rs[:len(rs)-1])
 					a.updateSearchMatches()
+					a.scrollToActiveMatch()
 					a.triggerRedraw()
 				}
 			case 0xff52:
 				if len(a.searchMatches) > 0 {
 					a.activeSearchIdx = (a.activeSearchIdx - 1 + len(a.searchMatches)) % len(a.searchMatches)
+					a.scrollToActiveMatch()
 					a.triggerRedraw()
 				}
 			case 0xff54:
 				if len(a.searchMatches) > 0 {
 					a.activeSearchIdx = (a.activeSearchIdx + 1) % len(a.searchMatches)
+					a.scrollToActiveMatch()
 					a.triggerRedraw()
 				}
 			default:
@@ -748,6 +755,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 						}
 						if added {
 							a.updateSearchMatches()
+							a.scrollToActiveMatch()
 							a.triggerRedraw()
 						}
 					}
@@ -776,7 +784,9 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 		switch action {
 		case platform.ActionNewTab:
 			newTab, err := a.createTab(a.canvas.Cols(), a.canvas.Rows(), a.currentWidth, a.currentHeight)
-			if err == nil {
+			if err != nil {
+				a.reportTabError(err)
+			} else {
 				a.tabs = append(a.tabs, newTab)
 				a.switchTab(len(a.tabs) - 1)
 			}
@@ -826,14 +836,14 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 			return false
 		case platform.ActionScrollUp:
 			if activeTerm.IsAlt() {
-				_, _ = activePTY.Write([]byte("\x1b[5~"))
+				writePTY(activePTY, []byte("\x1b[5~"))
 			} else {
 				activeTerm.Scroll(a.canvas.Rows() / 2)
 				a.triggerRedraw()
 			}
 		case platform.ActionScrollDown:
 			if activeTerm.IsAlt() {
-				_, _ = activePTY.Write([]byte("\x1b[6~"))
+				writePTY(activePTY, []byte("\x1b[6~"))
 			} else {
 				activeTerm.Scroll(-a.canvas.Rows() / 2)
 				a.triggerRedraw()
@@ -857,11 +867,11 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 						isAcceptKey := (keysym == 0xff53) || (keysym == 0xff09 && (e.State&platform.ModShift) == 0)
 						if isAcceptKey {
 							if len(a.currentInputBuffer) > 0 && a.currentInputBuffer[len(a.currentInputBuffer)-1] == ' ' && !strings.HasSuffix(a.currentInputBuffer, "\\ ") {
-								_, _ = activePTY.Write([]byte{0x08, '\\', ' '})
+								writePTY(activePTY, []byte{0x08, '\\', ' '})
 								a.currentInputBuffer = a.currentInputBuffer[:len(a.currentInputBuffer)-1] + "\\ "
 							}
 							toWrite := []byte(a.activeGhostText)
-							_, _ = activePTY.Write(toWrite)
+							writePTY(activePTY, toWrite)
 							a.currentInputBuffer += a.activeGhostText
 							a.activeGhostText = ""
 							activeTerm.ClearSelection()
@@ -881,8 +891,8 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 							if isAlt && (keysym == 0xff0d || keysym == 0xff8d) && a.activeDiag != nil {
 								diag := diagnostics.Analyze(strings.TrimSpace(a.currentInputBuffer))
 								if diag != nil && diag.QuickFix != "" {
-									_, _ = activePTY.Write([]byte{0x15})
-									_, _ = activePTY.Write([]byte(diag.QuickFix))
+									writePTY(activePTY, []byte{0x15})
+									writePTY(activePTY, []byte(diag.QuickFix))
 									a.currentInputBuffer = diag.QuickFix
 									a.updateGhostText()
 									a.updateDiagnostics()
@@ -911,7 +921,17 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 									a.updateGhostText()
 									a.updateDiagnostics()
 								}
-							} else if keysym == 0xff1b || (len(data) == 1 && (data[0] == 0x03 || data[0] == 0x15)) {
+							} else if keysym == 0xff1b || (len(data) == 1 && (data[0] == 0x03 || data[0] == 0x15 || data[0] == 0x17 || data[0] == 0x0b || data[0] == 0x12)) {
+								// Esc / Ctrl-C / Ctrl-U / Ctrl-W / Ctrl-K /
+								// Ctrl-R all discard or rewrite the line.
+								a.currentInputBuffer = ""
+								a.activeGhostText = ""
+								a.activeDiag = nil
+							} else if keysym == 0xff09 || keysym == 0xff52 || keysym == 0xff54 {
+								// L16: Tab completion and history recall
+								// (Up/Down) rewrite the line in ways Terrat
+								// cannot track — drop the guess rather than
+								// suggesting from stale text.
 								a.currentInputBuffer = ""
 								a.activeGhostText = ""
 								a.activeDiag = nil
@@ -924,7 +944,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 					}
 
 					activeTerm.ClearSelection()
-					_, _ = activePTY.Write([]byte(data))
+					writePTY(activePTY, []byte(data))
 					activeTerm.ResetScroll()
 					a.triggerRedraw()
 				}

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"golang.org/x/image/font/gofont/gomono"
 )
@@ -54,7 +55,10 @@ func TestFontEngineCellBoundsAfterZoom(t *testing.T) {
 	}
 }
 
-func TestFallbackFontsLoadOnlyWhenNeeded(t *testing.T) {
+// M28: fallback fonts load once in the background at startup, never
+// lazily under the terminal read-lock. M29: a rune no font covers renders
+// as a visible .notdef box, not a blank.
+func TestFallbackFontsLoadInBackground(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "mono.ttf")
 	if err := os.WriteFile(path, gomono.TTF, 0600); err != nil {
 		t.Fatal(err)
@@ -68,21 +72,40 @@ func TestFallbackFontsLoadOnlyWhenNeeded(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer fe.Close()
-	if fe.fallbacksLoaded || len(fe.fallbacks) != 0 {
-		t.Fatal("ASCII startup loaded fallback fonts")
+	// Wait for the background load to finish (it reads one tiny test font).
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		fe.fbMu.RLock()
+		loaded, n := fe.fallbacksLoaded, len(fe.fallbacks)
+		fe.fbMu.RUnlock()
+		if loaded && n == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("background fallback load did not complete")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
-	fe.GetGlyph('\U0010ffff', false)
-	if !fe.fallbacksLoaded || len(fe.fallbacks) != 1 {
-		t.Fatal("missing glyph did not trigger fallback loading")
+	// A rune no loaded font covers must render as a visible box, not blank.
+	mask := fe.GetGlyph('\U0010ffff', false)
+	visible := false
+	for _, a := range mask.Alpha {
+		if a != 0 {
+			visible = true
+			break
+		}
 	}
-	loaded := fe.fallbacks[0].ttf
+	if !visible {
+		t.Fatal("missing glyph rendered blank instead of a .notdef box")
+	}
+	loaded := fe.fallbacks[0].sfnt
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
 	if err := fe.SetFontSize(14); err != nil {
 		t.Fatal(err)
 	}
-	if len(fe.fallbacks) != 1 || fe.fallbacks[0].ttf != loaded {
+	if len(fe.fallbacks) != 1 || fe.fallbacks[0].sfnt != loaded {
 		t.Fatal("zoom must reuse parsed fallback fonts")
 	}
 }

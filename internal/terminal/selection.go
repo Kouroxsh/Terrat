@@ -195,9 +195,24 @@ func (t *Terminal) SelectLine(y int) {
 	}
 }
 
+// wordCharAt returns the rune occupying column x, resolving a
+// continuation cell to its wide lead cell's rune.
+func (t *Terminal) wordCharAt(x, y int) rune {
+	cell := t.GetCellLocked(x, y)
+	if cell.Continuation && x > 0 {
+		cell = t.GetCellLocked(x-1, y)
+	}
+	return cell.Char
+}
+
 func (t *Terminal) findWordBounds(x, y int) (int, int) {
 	if y < 0 || y >= t.rows || x < 0 || x >= t.cols {
 		return x, x
+	}
+
+	// A double-click on the second half of a wide rune selects the whole rune.
+	if t.GetCellLocked(x, y).Continuation && x > 0 {
+		x--
 	}
 
 	targetRune := t.GetCellLocked(x, y).Char
@@ -206,7 +221,7 @@ func (t *Terminal) findWordBounds(x, y int) (int, int) {
 
 	left := x
 	for left > 0 {
-		prev := t.GetCellLocked(left-1, y).Char
+		prev := t.wordCharAt(left-1, y)
 		if targetIsWord && isWordChar(prev) {
 			left--
 		} else if targetIsSpace && (prev == 0 || prev == ' ') {
@@ -220,7 +235,7 @@ func (t *Terminal) findWordBounds(x, y int) (int, int) {
 
 	right := x
 	for right < t.cols-1 {
-		next := t.GetCellLocked(right+1, y).Char
+		next := t.wordCharAt(right+1, y)
 		if targetIsWord && isWordChar(next) {
 			right++
 		} else if targetIsSpace && (next == 0 || next == ' ') {
@@ -232,7 +247,93 @@ func (t *Terminal) findWordBounds(x, y int) (int, int) {
 		}
 	}
 
+	// Never split a wide rune at the selection edge.
+	if t.GetCellLocked(left, y).Continuation && left > 0 {
+		left--
+	}
+	if t.GetCellLocked(right, y).Wide && right+1 < t.cols {
+		right++
+	}
+
 	return left, right
+}
+
+// rowCellsToRunes converts grid cells in [start, end] to text, skipping
+// continuation cells of wide runes and appending each cell's Extra
+// (zero-width) runes, so the text round-trips on copy/paste.
+func rowCellsToRunes(row []Cell, start, end int) []rune {
+	var out []rune
+	if start < 0 {
+		start = 0
+	}
+	if end >= len(row) {
+		end = len(row) - 1
+	}
+	for x := start; x <= end; x++ {
+		cell := row[x]
+		if cell.Continuation {
+			continue
+		}
+		r := cell.Char
+		if r == 0 {
+			r = ' '
+		}
+		out = append(out, r)
+		out = append(out, cell.Extra...)
+	}
+	return out
+}
+
+// wrappedAtViewport reports whether the row visible at viewport row y
+// continues the previous logical line (same scrollback/grid mapping as
+// GetCellLocked). Used to join wrapped rows on copy (L13).
+func (t *Terminal) wrappedAtViewport(y int) bool {
+	if t.isAlt {
+		if y >= 0 && y < len(t.altWrapped) {
+			return t.altWrapped[y]
+		}
+		return false
+	}
+	targetIdx := (len(t.scrollback) - t.scrollOff) + y
+	if targetIdx < 0 {
+		return false
+	}
+	if targetIdx < len(t.scrollback) {
+		if targetIdx < len(t.scrollbackWrapped) {
+			return t.scrollbackWrapped[targetIdx]
+		}
+		return false
+	}
+	gridRow := targetIdx - len(t.scrollback)
+	if gridRow >= 0 && gridRow < len(t.linesWrapped) {
+		return t.linesWrapped[gridRow]
+	}
+	return false
+}
+
+// logicalLineStrings joins physical rows into logical lines using the
+// wrapped flags, trimming trailing spaces only at the end of a logical
+// line — a space at a wrap point is real text, not padding (L13).
+func logicalLineStrings(rows [][]Cell, wrapped []bool) []string {
+	var lines []string
+	var cur []rune
+	started := false
+	flush := func() {
+		if started {
+			lines = append(lines, strings.TrimRight(string(cur), " "))
+			cur = nil
+			started = false
+		}
+	}
+	for i, row := range rows {
+		if i > 0 && (i >= len(wrapped) || !wrapped[i]) {
+			flush()
+		}
+		cur = append(cur, rowCellsToRunes(row, 0, len(row)-1)...)
+		started = true
+	}
+	flush()
+	return lines
 }
 
 func (t *Terminal) SelectAll() {
@@ -279,23 +380,8 @@ func (t *Terminal) IsSelectedLocked(x, y int) bool {
 func (t *Terminal) getAllTextLocked() string {
 	var sb strings.Builder
 
-	if !t.isAlt {
-		for _, row := range t.scrollback {
-			var lineRunes []rune
-			for _, cell := range row {
-				r := cell.Char
-				if r == 0 {
-					r = ' '
-				}
-				lineRunes = append(lineRunes, r)
-			}
-			lineStr := strings.TrimRight(string(lineRunes), " ")
-			sb.WriteString(lineStr)
-			sb.WriteByte('\n')
-		}
-	}
-
 	grid := t.activeGrid()
+	wrapped := t.activeWrapped()
 	lastRowWithContent := -1
 	for r := len(grid) - 1; r >= 0; r-- {
 		row := grid[r]
@@ -312,23 +398,29 @@ func (t *Terminal) getAllTextLocked() string {
 		}
 	}
 
-	if lastRowWithContent == -1 {
-		return strings.TrimRight(sb.String(), "\n")
+	var sbLines []string
+	if !t.isAlt {
+		sbLines = logicalLineStrings(t.scrollback, t.scrollbackWrapped)
+	}
+	var gridLines []string
+	if lastRowWithContent != -1 {
+		gridLines = logicalLineStrings(grid[:lastRowWithContent+1], wrapped[:lastRowWithContent+1])
+		// A logical line can span the scrollback/grid boundary: when the
+		// first grid row is a wrapped continuation, it belongs to the
+		// last scrollback line, not a line of its own (L13).
+		if len(sbLines) > 0 && len(gridLines) > 0 && len(wrapped) > 0 && wrapped[0] {
+			sbLines[len(sbLines)-1] += gridLines[0]
+			gridLines = gridLines[1:]
+		}
 	}
 
-	for r := 0; r <= lastRowWithContent; r++ {
-		row := grid[r]
-		var lineRunes []rune
-		for _, cell := range row {
-			r := cell.Char
-			if r == 0 {
-				r = ' '
-			}
-			lineRunes = append(lineRunes, r)
-		}
-		lineStr := strings.TrimRight(string(lineRunes), " ")
-		sb.WriteString(lineStr)
-		if r < lastRowWithContent {
+	for _, line := range sbLines {
+		sb.WriteString(line)
+		sb.WriteByte('\n')
+	}
+	for i, line := range gridLines {
+		sb.WriteString(line)
+		if i < len(gridLines)-1 {
 			sb.WriteByte('\n')
 		}
 	}
@@ -384,18 +476,33 @@ func (t *Terminal) GetSelectedText() string {
 
 		var lineRunes []rune
 		for x := colStart; x <= colEnd; x++ {
-			r := t.GetCellLocked(x, y).Char
+			cell := t.GetCellLocked(x, y)
+			if cell.Continuation {
+				continue
+			}
+			r := cell.Char
 			if r == 0 {
 				r = ' '
 			}
 			lineRunes = append(lineRunes, r)
+			lineRunes = append(lineRunes, cell.Extra...)
 		}
 
-		lineStr := strings.TrimRight(string(lineRunes), " ")
-
-		sb.WriteString(lineStr)
-		if y < eY {
-			sb.WriteByte('\n')
+		// L13: when the next selected row continues this logical line
+		// (wrapped) and the selection covers the whole row boundary,
+		// join without a newline and without trimming the trailing
+		// spaces — they are mid-line text, not padding.
+		continues := false
+		if y < eY && colEnd == t.cols-1 && t.wrappedAtViewport(y+1) {
+			continues = true
+		}
+		if continues {
+			sb.WriteString(string(lineRunes))
+		} else {
+			sb.WriteString(strings.TrimRight(string(lineRunes), " "))
+			if y < eY {
+				sb.WriteByte('\n')
+			}
 		}
 	}
 

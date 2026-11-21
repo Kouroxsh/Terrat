@@ -131,3 +131,82 @@ func TestHistoryLoadingIsBoundedAndKeepsRecentUniqueCommands(t *testing.T) {
 		t.Fatal("new command did not replace the oldest")
 	}
 }
+
+// M24: real shell history must win over the built-in defaults.
+func TestHistoryBeatsDefaults(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, ".bash_history"), []byte("git stash\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	eng := NewEngine()
+	if got := eng.Suggest("git st"); got != "ash" {
+		t.Fatalf("expected history 'git stash' to win (suffix %q), got %q", "ash", got)
+	}
+}
+
+// M25: a token ending in `/` completes inside that directory.
+func TestTrailingSlashListsDirectory(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "usr"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "usr", "bin"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "usr", "lib.txt"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	eng := &Engine{historyM: make(map[string]struct{}), maxItems: 100}
+	got := eng.Suggest("cd "+filepath.Join(dir, "usr")+"/", dir)
+	if got != "bin/" {
+		t.Fatalf("expected first entry 'bin/' inside usr/, got %q", got)
+	}
+	// `cd ../` from a subdirectory lists the parent.
+	sub := filepath.Join(dir, "sub")
+	if err := os.Mkdir(sub, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "aaa.txt"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := eng.Suggest("cd ../", sub); got == "" {
+		t.Fatal("expected 'cd ../' to list the parent directory, got empty")
+	}
+}
+
+// M26: the first token (command word) must not be path-completed.
+func TestFirstTokenNotPathCompleted(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	eng := &Engine{historyM: make(map[string]struct{}), maxItems: 100}
+	eng.Add("docker ps -a")
+	if got := eng.Suggest("do", dir); got != "cker ps -a" {
+		t.Fatalf("expected history suggestion 'cker ps -a', got %q", got)
+	}
+	// ... but a real path as the first token still completes.
+	if err := os.Mkdir(filepath.Join(dir, "bin"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if got := eng.Suggest("./b", dir); got != "in/" {
+		t.Fatalf("expected path suggestion 'in/' for './b', got %q", got)
+	}
+}
+
+// M27: bash HISTTIMEFORMAT timestamps must never be suggested.
+func TestTimestampLinesNotSuggested(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, ".bash_history"), []byte("#1600000000\necho hi\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	eng := NewEngine()
+	if got := eng.Suggest("#"); got != "" {
+		t.Fatalf("expected no suggestion for '#', got %q", got)
+	}
+	if got := eng.Suggest("echo"); got != " hi" {
+		t.Fatalf("expected history suggestion ' hi', got %q", got)
+	}
+}

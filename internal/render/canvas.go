@@ -32,6 +32,10 @@ type TabHitBox struct {
 }
 
 type SearchMatch struct {
+	// Row is the absolute row number in the terminal's full history: 0 is
+	// the oldest scrollback row and len(scrollback)+y is grid row y (in the
+	// alternate screen, which has no scrollback, it is just the grid row).
+	// The canvas converts it to a viewport row when rendering.
 	Row      int
 	StartCol int
 	EndCol   int
@@ -301,7 +305,11 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 		DrawHLine(c.Pixels, c.Stride, 0, HeaderHeight-1, c.Width, headerLinePixel)
 	}
 
-	titleY := (HeaderHeight - charH) / 2
+	// L62: HeaderHeight is fixed (34) but charH grows with the font
+	// size, so (HeaderHeight-charH)/2 goes negative for large fonts
+	// and the header text draws above the visible area. Clamp to 0:
+	// the text then starts at the header's top edge instead.
+	titleY := max(0, (HeaderHeight-charH)/2)
 	c.TabHitBoxes = c.TabHitBoxes[:0]
 	c.NewTabHitBox = [4]int{0, 0, 0, 0}
 
@@ -356,7 +364,7 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 			disp = fmt.Sprintf("%d: bash", i+1)
 		}
 		disp = truncateString(disp, maxChars, "…")
-		tTextY := (HeaderHeight - charH) / 2
+		tTextY := max(0, (HeaderHeight-charH)/2)
 		closeX := tEndX - 18
 		closeEndX := tEndX - 4
 
@@ -449,7 +457,7 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 	if hudInfo == "" {
 		hudInfo = fmt.Sprintf("%dx%d", c.cols, c.rows)
 	}
-	hudLen := len(hudInfo)
+	hudLen := displayWidth(hudInfo)
 	hudX := settingsBtnX - (hudLen * charW) - 16
 	if hudX > btnX+btnW+16 {
 		if isMC {
@@ -482,12 +490,22 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 			clear(c.searchHighlights)
 		}
 		highlights = c.searchHighlights
+		// Search matches carry absolute row numbers; convert to viewport
+		// rows so scrolling never invalidates them. In the alternate
+		// screen there is no scrollback, so the absolute row is the grid
+		// row already.
+		sbLen := 0
+		if !term.IsAltLocked() {
+			sbLen = term.ScrollbackLenLocked()
+		}
+		scrollOff := term.ScrollOffLocked()
 		for i, match := range searchMatches {
-			if match.Row < 0 || match.Row >= c.rows {
+			y := match.Row - sbLen + scrollOff
+			if y < 0 || y >= c.rows {
 				continue
 			}
 			for x := max(0, match.StartCol); x <= min(c.cols-1, match.EndCol); x++ {
-				idx := match.Row*c.cols + x
+				idx := y*c.cols + x
 				if i == activeSearchIdx {
 					highlights[idx] = 2
 				} else if highlights[idx] == 0 {
@@ -503,6 +521,21 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 		for x := 0; x < c.cols; x++ {
 			cell := term.GetCellLocked(x, y)
 			cellX := gridStartX + (x * charW)
+
+			// The second half of a wide rune is painted by the lead cell's
+			// double-width glyph; nothing to draw here (unless the cursor
+			// sits on it, in which case just the cursor block).
+			if cell.Continuation {
+				if x == renderCurX && y == effectiveCurY && effectiveCurY < c.rows && curVis && cursorBlink {
+					if isMC {
+						DrawRectBorder(c.Pixels, c.Stride, cellX, cellY, charW, charH, 0x000000)
+						FillRect(c.Pixels, c.Stride, cellX+1, cellY+1, charW-2, charH-2, 0x55ffff)
+					} else {
+						FillRect(c.Pixels, c.Stride, cellX, cellY, charW, charH, th.Cursor.ToPixel())
+					}
+				}
+				continue
+			}
 
 			fg := cell.FG
 			if fg == terminal.ColorDefaultFG || fg == 0 {
@@ -542,12 +575,16 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 			isCursor := (x == renderCurX && y == effectiveCurY && effectiveCurY < c.rows && curVis && cursorBlink)
 			if isCursor {
 				if isMC {
-					DrawRectBorder(c.Pixels, c.Stride, cellX, cellY, charW, charH, 0x000000)
-					FillRect(c.Pixels, c.Stride, cellX+1, cellY+1, charW-2, charH-2, 0x55ffff)
-					DrawHLine(c.Pixels, c.Stride, cellX+1, cellY+1, charW-2, 0xaaffff)
+					curW := charW
+					if cell.Wide {
+						curW = 2 * charW
+					}
+					DrawRectBorder(c.Pixels, c.Stride, cellX, cellY, curW, charH, 0x000000)
+					FillRect(c.Pixels, c.Stride, cellX+1, cellY+1, curW-2, charH-2, 0x55ffff)
+					DrawHLine(c.Pixels, c.Stride, cellX+1, cellY+1, curW-2, 0xaaffff)
 					DrawVLine(c.Pixels, c.Stride, cellX+1, cellY+1, charH-2, 0xaaffff)
-					DrawHLine(c.Pixels, c.Stride, cellX+1, cellY+charH-2, charW-2, 0x008888)
-					DrawVLine(c.Pixels, c.Stride, cellX+charW-2, cellY+1, charH-2, 0x008888)
+					DrawHLine(c.Pixels, c.Stride, cellX+1, cellY+charH-2, curW-2, 0x008888)
+					DrawVLine(c.Pixels, c.Stride, cellX+curW-2, cellY+1, charH-2, 0x008888)
 					fgPixel := uint32(0x000000)
 					bgPixel := uint32(0x55ffff)
 					char := cell.Char
@@ -555,8 +592,16 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 						char = ' '
 					}
 					if char != ' ' {
-						mask := c.fontEngine.GetGlyph(char, cell.Bold)
+						var mask *GlyphMask
+						if cell.Wide {
+							mask = c.fontEngine.GetWideGlyph(char, cell.Bold)
+						} else {
+							mask = c.fontEngine.GetGlyph(char, cell.Bold)
+						}
 						DrawGlyphBlit(c.Pixels, c.Stride, cellX, cellY, mask, fgPixel, bgPixel, false, baseline)
+					}
+					if cell.Wide {
+						x++ // skip the continuation cell
 					}
 					continue
 				} else {
@@ -581,11 +626,19 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 				continue
 			}
 
-			mask := c.fontEngine.GetGlyph(char, cell.Bold)
+			var mask *GlyphMask
+			if cell.Wide {
+				mask = c.fontEngine.GetWideGlyph(char, cell.Bold)
+			} else {
+				mask = c.fontEngine.GetGlyph(char, cell.Bold)
+			}
 			if isMC && bg == th.BG && !isSearchMatch && !term.IsSelectedLocked(x, y) {
 				DrawGlyphBlitTransparent(c.Pixels, c.Stride, cellX, cellY, mask, fgPixel, cell.Underline || isHoveredURL, baseline)
 			} else {
 				DrawGlyphBlit(c.Pixels, c.Stride, cellX, cellY, mask, fgPixel, bgPixel, cell.Underline || isHoveredURL, baseline)
+			}
+			if cell.Wide {
+				x++ // skip the continuation cell, already painted by the wide glyph
 			}
 		}
 	}
@@ -595,8 +648,8 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 		ghostFGPixel := th.MutedText.ToPixel()
 		ghostBGPixel := defaultBGPixel
 
-		for idx, r := range ghostText {
-			gx := curX + utf8.RuneCountInString(ghostText[:idx])
+		gx := curX
+		for _, r := range ghostText {
 			if gx >= c.cols {
 				break
 			}
@@ -606,8 +659,14 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 			}
 
 			cellX := gridStartX + (gx * charW)
-			mask := c.fontEngine.GetGlyph(r, false)
+			var mask *GlyphMask
+			if terminal.RuneWidth(r) == 2 {
+				mask = c.fontEngine.GetWideGlyph(r, false)
+			} else {
+				mask = c.fontEngine.GetGlyph(r, false)
+			}
 			DrawGlyphBlit(c.Pixels, c.Stride, cellX, ghostY, mask, ghostFGPixel, ghostBGPixel, false, baseline)
+			gx += terminal.RuneWidth(r)
 		}
 	}
 
@@ -622,7 +681,9 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 
 		tipPadX := 10
 		tipPadY := 4
-		tipW := len(diagMsg)*charW + tipPadX*2
+		// L45: the message starts with "💡 " and may contain "•",
+		// so a byte length overstates the tooltip width.
+		tipW := displayWidth(diagMsg)*charW + tipPadX*2
 		tipH := charH + tipPadY*2
 
 		if tipW > c.Width-30 {
@@ -701,11 +762,13 @@ func (c *Canvas) RenderPreferencesModal(th *terminal.Theme, selectedIdx int, opt
 
 	maxChars := 28
 	for _, opt := range options {
-		l := len(opt.Label) + 4
+		// L45: labels/values can hold non-ASCII text (e.g. a shell
+		// path); byte lengths would oversize the modal.
+		l := displayWidth(opt.Label) + 4
 		if opt.IsToggle {
 			l += 8
 		} else if opt.Value != "" {
-			l += len(opt.Value) + 3
+			l += displayWidth(opt.Value) + 3
 		}
 		if l > maxChars {
 			maxChars = l
@@ -731,6 +794,11 @@ func (c *Canvas) RenderPreferencesModal(th *terminal.Theme, selectedIdx int, opt
 		if modalH > c.Height-HeaderHeight-10 {
 			modalH = c.Height - HeaderHeight - 10
 		}
+		// L46: on a tiny window the clamps above can go negative
+		// (c.Width < 20, or a header taller than the window); a
+		// negative size makes the hit-boxes and drawing nonsense.
+		modalW = max(1, modalW)
+		modalH = max(1, modalH)
 
 		modalX = c.Width - modalW - 12
 		if modalX < 6 {
@@ -753,8 +821,8 @@ func (c *Canvas) RenderPreferencesModal(th *terminal.Theme, selectedIdx int, opt
 		DrawHLine(c.Pixels, c.Stride, modalX+4, modalY+headerH-1, modalW-8, 0x3e291c)
 
 		title := "Settings"
-		titleX := modalX + (modalW-len(title)*charW)/2
-		c.fontEngine.DrawStringShadow(c.Pixels, c.Stride, titleX, modalY+(headerH-charH)/2, title, 0xffff55, 0x3f3f15, true)
+		titleX := modalX + (modalW-displayWidth(title)*charW)/2
+		c.fontEngine.DrawStringShadow(c.Pixels, c.Stride, titleX, modalY+max(0, (headerH-charH)/2), title, 0xffff55, 0x3f3f15, true)
 
 		optStartY := modalY + headerH + 4
 		for i, opt := range options {
@@ -789,14 +857,14 @@ func (c *Canvas) RenderPreferencesModal(th *terminal.Theme, selectedIdx int, opt
 					badgeColor = uint32(0x55ff55)
 					badgeShadow = uint32(0x153f15)
 				}
-				badgeX := btnX + btnW - (len(badge) * charW) - 12
+				badgeX := btnX + btnW - (displayWidth(badge) * charW) - 12
 				c.fontEngine.DrawStringShadow(c.Pixels, c.Stride, badgeX, textY, badge, badgeColor, badgeShadow, true)
 			} else if opt.Value != "" {
-				badgeX := btnX + btnW - (len(opt.Value) * charW) - 12
+				badgeX := btnX + btnW - (displayWidth(opt.Value) * charW) - 12
 				c.fontEngine.DrawStringShadow(c.Pixels, c.Stride, badgeX, textY, opt.Value, 0x55ffff, 0x153f3f, true)
 			} else if opt.ID == savedID {
 				activeBadge := "[SAVED]"
-				badgeX := btnX + btnW - (len(activeBadge) * charW) - 12
+				badgeX := btnX + btnW - (displayWidth(activeBadge) * charW) - 12
 				c.fontEngine.DrawStringShadow(c.Pixels, c.Stride, badgeX, textY, activeBadge, 0x55ff55, 0x153f15, true)
 			}
 		}
@@ -806,7 +874,7 @@ func (c *Canvas) RenderPreferencesModal(th *terminal.Theme, selectedIdx int, opt
 		DrawHLine(c.Pixels, c.Stride, modalX+4, footerY+1, modalW-8, 0x3e291c)
 
 		hints := "Click/Enter: Toggle  ESC: Close"
-		hintsX := modalX + (modalW-len(hints)*charW)/2
+		hintsX := modalX + (modalW-displayWidth(hints)*charW)/2
 		c.fontEngine.DrawStringShadow(c.Pixels, c.Stride, hintsX, footerY+(footerH-charH)/2, hints, 0xa0a0a0, 0x282828, false)
 
 		return modalX, modalY, modalW, modalH, rowH
@@ -819,6 +887,10 @@ func (c *Canvas) RenderPreferencesModal(th *terminal.Theme, selectedIdx int, opt
 	modalH = headerH + 4 + len(options)*rowH + 8 + footerH
 	modalW = min(modalW, c.Width-20)
 	modalH = min(modalH, c.Height-HeaderHeight-10)
+	// L46: see the minecraft branch above — the clamps can go
+	// negative on a tiny window.
+	modalW = max(1, modalW)
+	modalH = max(1, modalH)
 	modalX = max(6, c.Width-modalW-12)
 	modalY = HeaderHeight + 6
 	c.PrefModalBox = [5]int{modalX, modalY, modalW, modalH, rowH}
@@ -829,7 +901,7 @@ func (c *Canvas) RenderPreferencesModal(th *terminal.Theme, selectedIdx int, opt
 	accent := th.Cursor.ToPixel()
 	secondary := th.ANSI[7].ToPixel()
 	FillRect(c.Pixels, c.Stride, modalX, modalY, modalW, modalH, bg)
-	c.fontEngine.DrawString(c.Pixels, c.Stride, modalX+20, modalY+(headerH-charH)/2, "Settings", fg, bg, true)
+	c.fontEngine.DrawString(c.Pixels, c.Stride, modalX+20, modalY+max(0, (headerH-charH)/2), "Settings", fg, bg, true)
 	DrawHLine(c.Pixels, c.Stride, modalX+20, modalY+headerH-1, modalW-40, line)
 
 	optStartY := modalY + headerH + 4
@@ -856,7 +928,7 @@ func (c *Canvas) RenderPreferencesModal(th *terminal.Theme, selectedIdx int, opt
 		switch {
 		case opt.ID == "search":
 			value := "Open >"
-			c.fontEngine.DrawString(c.Pixels, c.Stride, rightX-len(value)*charW, textY, value, secondary, rowBG, false)
+			c.fontEngine.DrawString(c.Pixels, c.Stride, rightX-displayWidth(value)*charW, textY, value, secondary, rowBG, false)
 		case opt.IsToggle:
 			const switchW, switchH = 28, 14
 			x := rightX - switchW
@@ -896,10 +968,10 @@ func (c *Canvas) RenderPreferencesModal(th *terminal.Theme, selectedIdx int, opt
 	}
 	textY := footerY + (footerH-charH)/2
 	closeHint := "Esc close"
-	if len(hint)*charW+len(closeHint)*charW+52 <= modalW {
+	if displayWidth(hint)*charW+displayWidth(closeHint)*charW+52 <= modalW {
 		c.fontEngine.DrawString(c.Pixels, c.Stride, modalX+20, textY, hint, secondary, bg, false)
 	}
-	c.fontEngine.DrawString(c.Pixels, c.Stride, modalX+modalW-20-len(closeHint)*charW, textY, closeHint, secondary, bg, false)
+	c.fontEngine.DrawString(c.Pixels, c.Stride, modalX+modalW-20-displayWidth(closeHint)*charW, textY, closeHint, secondary, bg, false)
 	DrawRectBorder(c.Pixels, c.Stride, modalX, modalY, modalW, modalH, th.Border.ToPixel())
 
 	return modalX, modalY, modalW, modalH, rowH
@@ -914,8 +986,32 @@ func (c *Canvas) RenderSearchBar(th *terminal.Theme, query string, matchIdx, tot
 	if barW > c.Width-40 {
 		barW = c.Width - 40
 	}
+	// L46: on a tiny window c.Width-40 goes negative; keep the bar
+	// at least 1px wide and inside the canvas.
+	barW = max(1, barW)
 	barX = c.Width - barW - 20
+	if barX < 0 {
+		barX = 0
+	}
 	barY = HeaderHeight + 8
+	// L46: on a window shorter than the header the bar starts below
+	// the canvas entirely; pull it up so the returned box stays
+	// inside the canvas.
+	if barY >= c.Height {
+		barY = max(0, c.Height-1)
+	}
+	// L46: the bar is 34px tall but the window may be shorter than
+	// HeaderHeight+8+34; shrink it to fit instead of drawing past
+	// the canvas bottom.
+	if barY+barH > c.Height {
+		barH = c.Height - barY
+	}
+	if barH < 1 {
+		barH = 1
+	}
+	// L62: barH is fixed (34) but charH grows with the font size;
+	// clamp like titleY so the text stays inside the bar.
+	barTextY := barY + max(0, (barH-charH)/2)
 
 	if th.ID == "minecraft" {
 		FillRect(c.Pixels, c.Stride, barX, barY, barW, barH, 0x141614)
@@ -926,7 +1022,7 @@ func (c *Canvas) RenderSearchBar(th *terminal.Theme, query string, matchIdx, tot
 		DrawVLine(c.Pixels, c.Stride, barX+barW-2, barY+1, barH-2, 0x555555)
 
 		prefix := "FIND: "
-		c.fontEngine.DrawStringShadow(c.Pixels, c.Stride, barX+12, barY+(barH-charH)/2, prefix, 0x55ffff, 0x153f3f, true)
+		c.fontEngine.DrawStringShadow(c.Pixels, c.Stride, barX+12, barTextY, prefix, 0x55ffff, 0x153f3f, true)
 
 		textX := barX + 12 + len(prefix)*charW
 		dispQuery := query
@@ -934,10 +1030,10 @@ func (c *Canvas) RenderSearchBar(th *terminal.Theme, query string, matchIdx, tot
 			dispQuery = "_"
 		}
 		maxQueryChars := (barW - (len(prefix)+14)*charW)
-		if len(dispQuery)*charW > maxQueryChars && maxQueryChars > 0 {
-			dispQuery = dispQuery[len(dispQuery)-(maxQueryChars/charW):]
+		if displayWidth(dispQuery)*charW > maxQueryChars && maxQueryChars > 0 {
+			dispQuery = truncateQueryEnd(dispQuery, maxQueryChars/charW)
 		}
-		c.fontEngine.DrawStringShadow(c.Pixels, c.Stride, textX, barY+(barH-charH)/2, dispQuery, 0xffffff, 0x3f3f3f, false)
+		c.fontEngine.DrawStringShadow(c.Pixels, c.Stride, textX, barTextY, dispQuery, 0xffffff, 0x3f3f3f, false)
 
 		countStr := fmt.Sprintf("(%d/%d)", matchIdx, totalMatches)
 		if totalMatches == 0 && query != "" {
@@ -946,13 +1042,13 @@ func (c *Canvas) RenderSearchBar(th *terminal.Theme, query string, matchIdx, tot
 			countStr = ""
 		}
 		if countStr != "" {
-			countX := barX + barW - len(countStr)*charW - 12
-			if countX > textX+len(dispQuery)*charW+8 {
+			countX := barX + barW - displayWidth(countStr)*charW - 12
+			if countX > textX+displayWidth(dispQuery)*charW+8 {
 				cntColor := uint32(0x888888)
 				if totalMatches > 0 {
 					cntColor = 0x55ff55
 				}
-				c.fontEngine.DrawStringShadow(c.Pixels, c.Stride, countX, barY+(barH-charH)/2, countStr, cntColor, MinecraftShadow(cntColor), false)
+				c.fontEngine.DrawStringShadow(c.Pixels, c.Stride, countX, barTextY, countStr, cntColor, MinecraftShadow(cntColor), false)
 			}
 		}
 
@@ -966,7 +1062,7 @@ func (c *Canvas) RenderSearchBar(th *terminal.Theme, query string, matchIdx, tot
 	DrawRectBorder(c.Pixels, c.Stride, barX, barY, barW, barH, borderPix)
 
 	prefix := "FIND: "
-	c.fontEngine.DrawString(c.Pixels, c.Stride, barX+12, barY+(barH-charH)/2, prefix, th.BadgeText.ToPixel(), bgPix, true)
+	c.fontEngine.DrawString(c.Pixels, c.Stride, barX+12, barTextY, prefix, th.BadgeText.ToPixel(), bgPix, true)
 
 	textX := barX + 12 + len(prefix)*charW
 	dispQuery := query
@@ -974,10 +1070,10 @@ func (c *Canvas) RenderSearchBar(th *terminal.Theme, query string, matchIdx, tot
 		dispQuery = "_"
 	}
 	maxQueryChars := (barW - (len(prefix)+14)*charW)
-	if len(dispQuery)*charW > maxQueryChars && maxQueryChars > 0 {
-		dispQuery = dispQuery[len(dispQuery)-(maxQueryChars/charW):]
+	if displayWidth(dispQuery)*charW > maxQueryChars && maxQueryChars > 0 {
+		dispQuery = truncateQueryEnd(dispQuery, maxQueryChars/charW)
 	}
-	c.fontEngine.DrawString(c.Pixels, c.Stride, textX, barY+(barH-charH)/2, dispQuery, th.FG.ToPixel(), bgPix, false)
+	c.fontEngine.DrawString(c.Pixels, c.Stride, textX, barTextY, dispQuery, th.FG.ToPixel(), bgPix, false)
 
 	countStr := fmt.Sprintf("(%d/%d)", matchIdx, totalMatches)
 	if totalMatches == 0 && query != "" {
@@ -986,17 +1082,38 @@ func (c *Canvas) RenderSearchBar(th *terminal.Theme, query string, matchIdx, tot
 		countStr = ""
 	}
 	if countStr != "" {
-		countX := barX + barW - len(countStr)*charW - 12
-		if countX > textX+len(dispQuery)*charW+8 {
+		countX := barX + barW - displayWidth(countStr)*charW - 12
+		if countX > textX+displayWidth(dispQuery)*charW+8 {
 			cntColor := th.MutedText.ToPixel()
 			if totalMatches > 0 {
 				cntColor = th.BadgeText.ToPixel()
 			}
-			c.fontEngine.DrawString(c.Pixels, c.Stride, countX, barY+(barH-charH)/2, countStr, cntColor, bgPix, false)
+			c.fontEngine.DrawString(c.Pixels, c.Stride, countX, barTextY, countStr, cntColor, bgPix, false)
 		}
 	}
 
 	return barX, barY, barW, barH
+}
+
+// displayWidth returns the number of cells s occupies in the UI font:
+// one per rune. len(s) counts bytes, which overstates the width of any
+// multi-byte text and misplaces anything positioned from it (L45).
+func displayWidth(s string) int {
+	return utf8.RuneCountInString(s)
+}
+
+// truncateQueryEnd keeps the last maxRunes runes of q so the tail of a
+// long search query stays visible. Slicing by bytes (the old code)
+// could cut a multi-byte rune in half and draw invalid UTF-8.
+func truncateQueryEnd(q string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	runes := []rune(q)
+	if len(runes) <= maxRunes {
+		return q
+	}
+	return string(runes[len(runes)-maxRunes:])
 }
 
 func truncateString(s string, maxChars int, ellipsis string) string {

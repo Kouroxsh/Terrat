@@ -23,3 +23,30 @@ func TestSetAndGetDefaultShell(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// M17: a configured or $SHELL value that does not exist must fall back
+// instead of being returned verbatim (which made pty.Start fail and the
+// app exit without ever opening a window).
+func TestResolveUnixShellFallback(t *testing.T) {
+	t.Setenv("SHELL", "/nonexistent/shell-xyz")
+	got := ResolveUnixShell("/nonexistent/configured-sh")
+	if len(got) == 0 || got[0] == "/nonexistent/configured-sh" || got[0] == "/nonexistent/shell-xyz" {
+		t.Fatalf("expected a fallback shell, got %v", got)
+	}
+	if got[0] != "/bin/bash" && got[0] != "/bin/sh" {
+		t.Fatalf("expected /bin/bash or /bin/sh fallback, got %v", got)
+	}
+}
+
+func TestResolveUnixShellValid(t *testing.T) {
+	t.Setenv("SHELL", "/bin/bash")
+	if got := ResolveUnixShell("sh"); len(got) != 1 || got[0] != "sh" {
+		t.Fatalf("expected [sh], got %v", got)
+	}
+	if got := ResolveUnixShell("/bin/bash --login"); len(got) != 2 || got[0] != "/bin/bash" || got[1] != "--login" {
+		t.Fatalf("expected [/bin/bash --login], got %v", got)
+	}
+	if got := ResolveUnixShell("", "echo", "hi"); len(got) != 2 || got[0] != "echo" {
+		t.Fatalf("expected custom command to win, got %v", got)
+	}
+}
