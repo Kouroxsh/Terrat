@@ -188,3 +188,155 @@ func TestUnicodeGroupTranslation(t *testing.T) {
 		t.Fatalf("expected 'λ' in group 1 via activeGroup, got %q", string(bGroup2))
 	}
 }
+
+func testKeyHandler(syms []xproto.Keysym) *KeyHandler {
+	return &KeyHandler{
+		minKeycode:        10,
+		maxKeycode:        10,
+		keysymsPerKeycode: 1,
+		keysyms:           syms,
+	}
+}
+
+func TestTranslateShiftTabAndDeadKeys(t *testing.T) {
+	// Shift+Tab: XKB reports ISO_Left_Tab (0xfe20), not 0xff09.
+	kh := testKeyHandler([]xproto.Keysym{0xfe20})
+	b, act := kh.Translate(xproto.KeyPressEvent{Detail: 10, State: ModShift})
+	if act != ActionNone || string(b) != "\x1b[Z" {
+		t.Fatalf("Shift+Tab: expected \\x1b[Z, got %q action %v", string(b), act)
+	}
+
+	// Ctrl+Shift+Tab is still "previous tab".
+	_, act = kh.Translate(xproto.KeyPressEvent{Detail: 10, State: ModShift | ModCtrl})
+	if act != ActionPrevTab {
+		t.Fatalf("Ctrl+Shift+Tab: expected ActionPrevTab, got %v", act)
+	}
+
+	// Dead keys, AltGr and other ISO keysyms produce nothing.
+	for _, sym := range []xproto.Keysym{0xfe50, 0xfe51, 0xfe03, 0xfe08, 0xff20, 0xfd00} {
+		kh := testKeyHandler([]xproto.Keysym{sym})
+		b, act := kh.Translate(xproto.KeyPressEvent{Detail: 10})
+		if b != nil || act != ActionNone {
+			t.Fatalf("keysym 0x%x: expected no output, got %q action %v", sym, string(b), act)
+		}
+	}
+}
+
+func TestTranslateAlt(t *testing.T) {
+	// Alt+printable: ESC + character.
+	kh := testKeyHandler([]xproto.Keysym{'b'})
+	b, _ := kh.Translate(xproto.KeyPressEvent{Detail: 10, State: ModAlt})
+	if string(b) != "\x1bb" {
+		t.Fatalf("Alt+b: expected ESC b, got %q", string(b))
+	}
+
+	// Alt+Backspace: ESC + DEL.
+	kh = testKeyHandler([]xproto.Keysym{0xff08})
+	b, _ = kh.Translate(xproto.KeyPressEvent{Detail: 10, State: ModAlt})
+	if string(b) != "\x1b\x7f" {
+		t.Fatalf("Alt+Backspace: expected ESC DEL, got %q", string(b))
+	}
+
+	// Alt+Up: ESC + the arrow sequence.
+	kh = testKeyHandler([]xproto.Keysym{0xff52})
+	b, _ = kh.Translate(xproto.KeyPressEvent{Detail: 10, State: ModAlt})
+	if string(b) != "\x1b\x1b[A" {
+		t.Fatalf("Alt+Up: expected ESC ESC[A, got %q", string(b))
+	}
+
+	// Ctrl+Alt+a: ESC + control byte.
+	kh = testKeyHandler([]xproto.Keysym{'a'})
+	b, _ = kh.Translate(xproto.KeyPressEvent{Detail: 10, State: ModAlt | ModCtrl})
+	if string(b) != "\x1b\x01" {
+		t.Fatalf("Ctrl+Alt+a: expected ESC 0x01, got %q", string(b))
+	}
+
+	// Alt+digit tab switching is unchanged.
+	kh = testKeyHandler([]xproto.Keysym{'3'})
+	_, act := kh.Translate(xproto.KeyPressEvent{Detail: 10, State: ModAlt})
+	if act != ActionSwitchTab3 {
+		t.Fatalf("Alt+3: expected ActionSwitchTab3, got %v", act)
+	}
+
+	// Bare keys are unchanged by the Alt work.
+	kh = testKeyHandler([]xproto.Keysym{'b'})
+	b, _ = kh.Translate(xproto.KeyPressEvent{Detail: 10})
+	if string(b) != "b" {
+		t.Fatalf("b: expected b, got %q", string(b))
+	}
+}
+
+func TestKeysymToRuneLegacyGreekCyrillic(t *testing.T) {
+	// The two anchors from the bug report: the old formulas were 0x0F off.
+	cases := map[xproto.Keysym]rune{
+		0x06c1: 'а', // XK_Cyrillic_a -> U+0430
+		0x07c1: 'Α', // XK_Greek_ALPHA -> U+0391
+		0x06e1: 'А', // U+0410
+		0x07e1: 'α', // U+03B1
+		0x06a1: 'ђ', // U+0452
+		0x07a1: 'Ά', // U+0386
+		0x06ff: 'Ъ', // U+042A
+		0x07f9: 'ω', // U+03C9
+		0x06b0: '№', // U+2116
+		0x07af: '―', // U+2015
+	}
+	for sym, want := range cases {
+		r, ok := KeysymToRune(sym)
+		if !ok || r != want {
+			t.Fatalf("keysym 0x%x: expected %q, got %q ok=%v", sym, want, r, ok)
+		}
+	}
+
+	// Unmapped legacy keysyms are dropped, not guessed.
+	for _, sym := range []xproto.Keysym{0x06a0, 0x07d3, 0x07fe} {
+		if r, ok := KeysymToRune(sym); ok {
+			t.Fatalf("keysym 0x%x: expected no rune, got %q", sym, r)
+		}
+	}
+
+	// Dead / ISO keysyms are not runes.
+	for _, sym := range []xproto.Keysym{0xfe20, 0xfe50, 0xfe03, 0xfd00} {
+		if r, ok := KeysymToRune(sym); ok {
+			t.Fatalf("keysym 0x%x: expected no rune, got %q", sym, r)
+		}
+	}
+
+	// Direct Unicode keysyms still work.
+	r, ok := KeysymToRune(0x03bb)
+	if !ok || r != 'λ' {
+		t.Fatalf("expected lambda, got %q %v", r, ok)
+	}
+}
+
+func TestIncrOutStateNextChunk(t *testing.T) {
+	data := make([]byte, 200*1024)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	st := &incrOutState{data: data, chunkSize: 64 * 1024}
+	var got []byte
+	for i := 0; i < 10; i++ {
+		chunk, done := st.nextChunk()
+		if done {
+			if len(chunk) != 0 {
+				t.Fatalf("final chunk must be empty, got %d bytes", len(chunk))
+			}
+			break
+		}
+		got = append(got, chunk...)
+	}
+	if len(got) != len(data) {
+		t.Fatalf("expected %d bytes in chunks, got %d", len(data), len(got))
+	}
+	for i := range data {
+		if got[i] != data[i] {
+			t.Fatalf("chunked data mismatch at byte %d", i)
+		}
+	}
+
+	// Empty data is done immediately.
+	st = &incrOutState{data: nil, chunkSize: 64 * 1024}
+	if _, done := st.nextChunk(); !done {
+		t.Fatal("empty transfer must be done immediately")
+	}
+}

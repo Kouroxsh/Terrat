@@ -65,6 +65,13 @@ type ExposeEvent struct{}
 
 func (ExposeEvent) isPlatformEvent() {}
 
+// FocusInEvent is fired when the window gains focus. It mirrors
+// FocusOutEvent: the app clears transient state on focus-out and may
+// restore or refresh it on focus-in.
+type FocusInEvent struct{}
+
+func (FocusInEvent) isPlatformEvent() {}
+
 // FocusOutEvent is fired when the window loses focus.
 type FocusOutEvent struct{}
 

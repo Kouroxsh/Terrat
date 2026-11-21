@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 )
 
 type IssueSeverity int
@@ -24,7 +25,17 @@ type Diagnostic struct {
 	QuickFix   string
 }
 
-var pathCache sync.Map
+// pathCacheEntry is a cached LookPath result. Positive results are kept
+// forever; negative ones expire (M12) so a command installed after Terrat
+// started stops being reported as unknown within half a minute.
+type pathCacheEntry struct {
+	exists    bool
+	checkedAt time.Time
+}
+
+const negativePathCacheTTL = 30 * time.Second
+
+var pathCache sync.Map // string -> pathCacheEntry
 
 func isCommandOnPath(name string) bool {
 	if len(name) < 2 || len(name) > 40 {
@@ -36,11 +47,14 @@ func isCommandOnPath(name string) bool {
 		}
 	}
 	if v, ok := pathCache.Load(name); ok {
-		return v.(bool)
+		e := v.(pathCacheEntry)
+		if e.exists || time.Since(e.checkedAt) < negativePathCacheTTL {
+			return e.exists
+		}
 	}
 	_, err := exec.LookPath(name)
 	exists := (err == nil)
-	pathCache.Store(name, exists)
+	pathCache.Store(name, pathCacheEntry{exists: exists, checkedAt: time.Now()})
 	return exists
 }
 
@@ -61,14 +75,19 @@ var shellBuiltins = map[string]bool{
 	"in": true, "esac": true, "select": true, "function": true, "time": true,
 }
 
+// L24: this is a list of commands that exist on Linux. The Windows-only
+// commands (cls, cmd, dir, ipconfig, winget) used to be here too, which
+// silently suppressed them — typing one on Linux produced no diagnostic
+// at all. They are gone now, so a typo like `cmd` suggests `cd` instead
+// of being swallowed.
 var commonBaseCommands = []string{
-	"cat", "cd", "cp", "curl", "chmod", "chown", "clear", "cls", "cmd",
-	"df", "diff", "dir", "docker", "du",
+	"cat", "cd", "cp", "curl", "chmod", "chown", "clear",
+	"df", "diff", "docker", "du",
 	"echo", "exit", "export",
 	"find", "free",
 	"git", "go", "grep", "gzip",
 	"head", "history", "htop",
-	"ip", "ipconfig",
+	"ip",
 	"journalctl",
 	"kill", "killall",
 	"less", "ln", "ls",
@@ -80,7 +99,7 @@ var commonBaseCommands = []string{
 	"tail", "tar", "top", "touch", "tree",
 	"uname", "uptime",
 	"vim",
-	"wget", "where", "which", "whoami", "winget",
+	"wget", "where", "which", "whoami",
 	"yarn",
 }
 
@@ -106,7 +125,8 @@ var commonTypos = map[string]string{
 	"grpe":   "grep",
 	"exist":  "exit",
 	"exti":   "exit",
-	"qui":    "quit",
+	// L25: "qui" used to map to "quit", but there is no `quit` command
+	// or builtin on Linux — suggesting it sent users to a dead end.
 	"pyhton": "python",
 	"phtyon": "python",
 	"shh":    "ssh",
@@ -183,9 +203,13 @@ var privilegedCommands = map[string]string{
 }
 
 var safeReadOperations = map[string][]string{
-	"apt":      {"search", "show", "list", "depends", "rdepends", "policy", "help", "--help", "-h", "--version", "-v"},
-	"apt-get":  {"help", "--help", "-h", "--version", "-v", "source"},
-	"pacman":   {"-ss", "-si", "-q", "-qs", "-qi", "-ql", "-qe", "-qo", "-qu", "-qk", "-qd", "-qdt", "-f", "-fy", "-fs", "-v", "--help", "--version"},
+	"apt":     {"search", "show", "list", "depends", "rdepends", "policy", "help", "--help", "-h", "--version", "-v"},
+	"apt-get": {"help", "--help", "-h", "--version", "-v", "source"},
+	// Pacman entries are case-sensitive (M37): -Ss/-Si are read-only sync
+	// search/info, -Qs/-Qi/... are read-only queries, while -SS is a sync
+	// (install) operation and must NOT match. Lowercase duplicates are kept
+	// for leniency — they match no privileged operation.
+	"pacman":   {"-ss", "-Ss", "-si", "-Si", "-q", "-Q", "-qs", "-Qs", "-qi", "-Qi", "-ql", "-Ql", "-qe", "-Qe", "-qo", "-Qo", "-qu", "-Qu", "-qk", "-Qk", "-qd", "-Qd", "-qdt", "-Qdt", "-f", "-F", "-fy", "-Fy", "-fs", "-Fs", "-v", "--help", "--version"},
 	"dnf":      {"search", "info", "list", "repoquery", "check-update", "help", "--help", "--version"},
 	"yum":      {"search", "info", "list", "check-update", "help", "--help", "--version"},
 	"ufw":      {"status", "show", "version", "--help"},
@@ -218,22 +242,140 @@ func LevenshteinDistance(s, t string) int {
 	return d[len(s)][len(t)]
 }
 
+// isSubsequence reports whether word appears in cand in order (not
+// necessarily contiguously): the typo is the candidate with characters
+// deleted, the most common typo class for short words.
+func isSubsequence(word, cand string) bool {
+	if word == "" {
+		return true
+	}
+	j := 0
+	for i := 0; i < len(cand) && j < len(word); i++ {
+		if cand[i] == word[j] {
+			j++
+		}
+	}
+	return j == len(word)
+}
+
+// DamerauLevenshteinDistance is Levenshtein distance with an adjacent
+// transposition costing 1 instead of 2 (optimal string alignment).
+// Transpositions are the most common typo class (`cta` for `cat`, `plu`
+// for `pull`), and plain Levenshtein scores them as two edits, which put
+// short typos out of reach of any sane threshold: `plu` is 3 edits from
+// `pull` under Levenshtein, 2 under Damerau — and 3 from `push`, so the
+// match is unambiguous.
+func DamerauLevenshteinDistance(s, t string) int {
+	d := make([][]int, len(s)+1)
+	for i := range d {
+		d[i] = make([]int, len(t)+1)
+		d[i][0] = i
+	}
+	for j := range d[0] {
+		d[0][j] = j
+	}
+	for j := 1; j <= len(t); j++ {
+		for i := 1; i <= len(s); i++ {
+			cost := 0
+			if s[i-1] != t[j-1] {
+				cost = 1
+			}
+			d[i][j] = min(
+				d[i-1][j]+1,
+				d[i][j-1]+1,
+				d[i-1][j-1]+cost,
+			)
+			if i > 1 && j > 1 && s[i-1] == t[j-2] && s[i-2] == t[j-1] {
+				d[i][j] = min(d[i][j], d[i-2][j-2]+1)
+			}
+		}
+	}
+	return d[len(s)][len(t)]
+}
+
 func FindClosestMatch(word string, candidates []string, maxDist int) string {
 	lowerWord := strings.ToLower(word)
 	bestDist := maxDist + 1
 	bestMatch := ""
+	bestIsSubseq := false
 
 	for _, cand := range candidates {
 		if strings.EqualFold(cand, word) {
 			return ""
 		}
-		dist := LevenshteinDistance(lowerWord, strings.ToLower(cand))
-		if dist <= maxDist && dist < bestDist {
+		dist := DamerauLevenshteinDistance(lowerWord, strings.ToLower(cand))
+		if dist > maxDist {
+			continue
+		}
+		// On a distance tie, prefer a candidate the typo is a subsequence
+		// of (a deletion typo, e.g. `rn` for `run`): without this,
+		// `docker rn` suggested `rm` — same distance, but a destructive
+		// command and the less likely reading.
+		sub := isSubsequence(lowerWord, strings.ToLower(cand))
+		if dist < bestDist || (dist == bestDist && sub && !bestIsSubseq) {
 			bestDist = dist
 			bestMatch = cand
+			bestIsSubseq = sub
 		}
 	}
 	return bestMatch
+}
+
+// globalValueFlags lists, per command, the global flags that consume the
+// following token as their value (M38). Unknown flags are skipped as bare
+// flags; a flag with "=" attached (e.g. --color=auto) needs no value skip.
+var globalValueFlags = map[string]map[string]bool{
+	"apt":       {"-c": true, "--config-file": true, "-o": true, "--option": true, "-t": true, "--target-release": true},
+	"apt-get":   {"-c": true, "--config-file": true, "-o": true, "--option": true, "-t": true, "--target-release": true},
+	"pacman":    {"--color": true, "--config": true, "--dbpath": true, "-b": true, "--root": true, "-r": true, "--cachedir": true, "--logfile": true, "--gpgdir": true},
+	"dnf":       {"-c": true, "--config": true, "--setopt": true, "--releasever": true, "--installroot": true},
+	"yum":       {"-c": true, "--config": true, "--setopt": true, "--releasever": true, "--installroot": true},
+	"git":       {"-c": true, "-C": true, "--git-dir": true, "--work-tree": true, "--namespace": true},
+	"docker":    {"-c": true, "--context": true, "-H": true, "--host": true, "--config": true, "--log-level": true},
+	"systemctl": {"-H": true, "--host": true, "-M": true, "--machine": true, "--root": true},
+	"go":        {"-C": true},
+	"cargo":     {"--config": true, "--manifest-path": true, "--color": true, "--target": true},
+	"npm":       {"--config": true, "--prefix": true, "--cache": true, "--registry": true},
+}
+
+// findSubcommand returns the subcommand token after the command name,
+// skipping global flags (and their values). "" when there is none, e.g. a
+// bare `apt` or `apt --version`. Pacman is special: its operation itself
+// is a flag cluster (`-Ss`), so after skipping global flags the first
+// remaining token is the operation even when it starts with `-`.
+func findSubcommand(cmd string, parts []string) string {
+	valueFlags := globalValueFlags[cmd]
+	isSafeLong := func(tok string) bool {
+		for _, s := range safeReadOperations[cmd] {
+			if s == tok {
+				return true
+			}
+		}
+		return false
+	}
+	for i := 1; i < len(parts); i++ {
+		tok := parts[i]
+		if strings.HasPrefix(tok, "-") {
+			if strings.Contains(tok, "=") {
+				continue
+			}
+			if valueFlags != nil && valueFlags[tok] {
+				i++ // skip the flag's value
+				continue
+			}
+			if cmd == "pacman" {
+				// Long options are global flags — except the query
+				// operations in the safe list (`--help`, `--version`).
+				if strings.HasPrefix(tok, "--") && !isSafeLong(tok) {
+					continue
+				}
+				return tok
+			}
+			continue
+		}
+		return tok
+	}
+	return ""
 }
 
 func isSafeOperation(cmd string, parts []string) bool {
@@ -241,14 +383,34 @@ func isSafeOperation(cmd string, parts []string) bool {
 	if !ok {
 		return false
 	}
-	if len(parts) <= 1 {
+	sub := findSubcommand(cmd, parts)
+	if sub == "" {
 		return false
 	}
-	sub := strings.ToLower(parts[1])
+	// M37: pacman short options are case-sensitive — `-SS` (sync) must not
+	// be lowercased into `-ss` (search) and treated as safe.
+	if cmd != "pacman" {
+		sub = strings.ToLower(sub)
+	}
 	for _, safe := range safeOps {
 		if sub == safe {
 			return true
 		}
+	}
+	return false
+}
+
+// needsRoot reports whether invoking cmd with these arguments actually
+// does something privileged. A bare `apt`, `ufw` or `fdisk` only prints
+// usage and needs no sudo — warning there was a false positive (L22).
+// reboot/poweroff/shutdown are the exceptions: they act with no arguments.
+func needsRoot(cmd string, parts []string) bool {
+	if findSubcommand(cmd, parts) != "" {
+		return true
+	}
+	switch cmd {
+	case "reboot", "poweroff", "shutdown":
+		return true
 	}
 	return false
 }
@@ -274,6 +436,117 @@ func unnestSudo(parts []string) (cleanedParts []string, hasSudo bool) {
 		return parts[i:], true
 	}
 	return nil, true
+}
+
+// isEnvAssignment reports whether tok looks like a VAR=value assignment
+// that precedes a command (M11).
+func isEnvAssignment(tok string) bool {
+	eq := strings.IndexByte(tok, '=')
+	if eq <= 0 {
+		return false
+	}
+	for i, r := range tok[:eq] {
+		if r != '_' && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (i == 0 || r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// stripCommandPrefixes drops leading VAR=value assignments and wrapper
+// commands (time/command/env/nice) so the real command is analysed (M11):
+// `FOO=bar apt install x` must warn like `apt install x`, and
+// `FOO=bar gti status` must suggest `git`.
+func stripCommandPrefixes(parts []string) []string {
+	i := 0
+	for i < len(parts) {
+		tok := parts[i]
+		if isEnvAssignment(tok) {
+			i++
+			continue
+		}
+		switch tok {
+		case "time":
+			i++
+			for i < len(parts) && parts[i] == "-p" {
+				i++
+			}
+		case "command":
+			// `command -v/-V name` queries the shell instead of running the
+			// command; only strip a bare `command` before a real word.
+			if i+1 < len(parts) && !strings.HasPrefix(parts[i+1], "-") {
+				i++
+			} else {
+				return parts[i:]
+			}
+		case "env":
+			i++
+			for i < len(parts) {
+				t := parts[i]
+				if t == "-i" {
+					i++
+					continue
+				}
+				if t == "-u" {
+					i += 2
+					continue
+				}
+				if strings.HasPrefix(t, "-u") && len(t) > 2 {
+					i++
+					continue
+				}
+				if isEnvAssignment(t) {
+					i++
+					continue
+				}
+				break
+			}
+		case "nice":
+			i++
+			for i < len(parts) {
+				t := parts[i]
+				if t == "-n" || t == "--adjustment" {
+					i += 2
+					continue
+				}
+				if strings.HasPrefix(t, "--adjustment=") || (strings.HasPrefix(t, "-n") && len(t) > 2) || strings.HasPrefix(t, "-") {
+					i++
+					continue
+				}
+				break
+			}
+		default:
+			return parts[i:]
+		}
+	}
+	return parts[i:]
+}
+
+// indexOfCommand finds cmd in seg at a word boundary (start of string or
+// after a blank), so a prefix like `FOO=bar` cannot shadow the match.
+func indexOfCommand(seg, cmd string) int {
+	for i := 0; i+len(cmd) <= len(seg); {
+		j := strings.Index(seg[i:], cmd)
+		if j < 0 {
+			return -1
+		}
+		idx := i + j
+		if idx == 0 || seg[idx-1] == ' ' || seg[idx-1] == '\t' {
+			return idx
+		}
+		i = idx + 1
+	}
+	return -1
+}
+
+// suffixAfterBase returns the part of seg after the first word-boundary
+// occurrence of cmd (the argument list). Falls back to the whole segment
+// when cmd is not found, matching the old TrimPrefix behaviour.
+func suffixAfterBase(seg, cmd string) string {
+	if idx := indexOfCommand(seg, cmd); idx >= 0 {
+		return seg[idx+len(cmd):]
+	}
+	return seg
 }
 
 func Analyze(rawInput string) *Diagnostic {
@@ -311,7 +584,8 @@ func Analyze(rawInput string) *Diagnostic {
 		return nil
 	}
 
-	cmdParts, hasSudo := unnestSudo(parts)
+	cmdParts, hasSudo := unnestSudo(stripCommandPrefixes(parts))
+	cmdParts = stripCommandPrefixes(cmdParts)
 	if len(cmdParts) == 0 {
 		return nil
 	}
@@ -320,8 +594,8 @@ func Analyze(rawInput string) *Diagnostic {
 
 	if !hasSudo && os.Geteuid() != 0 {
 		if fix, ok := privilegedCommands[baseCmd]; ok {
-			if !isSafeOperation(baseCmd, cmdParts) {
-				fixedLine := fix + strings.TrimPrefix(activeSeg, baseCmd)
+			if !isSafeOperation(baseCmd, cmdParts) && needsRoot(baseCmd, cmdParts) {
+				fixedLine := fix + suffixAfterBase(activeSeg, baseCmd)
 				return &Diagnostic{
 					Severity:   SeverityWarning,
 					Message:    fmt.Sprintf("'%s' usually requires root privileges", baseCmd),
@@ -332,8 +606,7 @@ func Analyze(rawInput string) *Diagnostic {
 		}
 	}
 
-	if len(cmdParts) >= 2 {
-		sub := cmdParts[1]
+	if sub := findSubcommand(baseCmd, cmdParts); sub != "" {
 		if !strings.HasPrefix(sub, "-") {
 			var subCandidates []string
 			switch baseCmd {
@@ -366,14 +639,23 @@ func Analyze(rawInput string) *Diagnostic {
 						return nil
 					}
 
-					if len(sub) > 3 || sub == "puch" || sub == "stat" || sub == "pul" || sub == "comit" {
+					// L23: short subcommands get suggestions too — `git plu`,
+					// `docker rn` and `go tst` are one edit away from a real
+					// subcommand. Single letters are still excluded (a lone
+					// `git a` is more likely an abbreviation than a typo).
+					// maxD 1 keeps short suggestions safe from false hits.
+					if len(sub) >= 2 {
 						maxD := 1
-						if len(sub) >= 6 {
+						// Three-letter typos get 2: a transposed + dropped
+						// letter (`plu` for `pull`) is 2 Damerau edits.
+						// Longer words stay at 1 until len 6, where 2 was
+						// already the rule.
+						if len(sub) == 3 || len(sub) >= 6 {
 							maxD = 2
 						}
 						if match := FindClosestMatch(sub, subCandidates, maxD); match != "" {
 							fixedLine := activeSeg
-							baseIdx := strings.Index(activeSeg, baseCmd)
+							baseIdx := indexOfCommand(activeSeg, baseCmd)
 							if baseIdx != -1 {
 								afterBase := activeSeg[baseIdx+len(baseCmd):]
 								relSubIdx := strings.Index(afterBase, sub)
@@ -420,7 +702,7 @@ func Analyze(rawInput string) *Diagnostic {
 	}
 
 	if fix, ok := commonTypos[baseCmd]; ok {
-		fixedLine := fix + strings.TrimPrefix(activeSeg, baseCmd)
+		fixedLine := fix + suffixAfterBase(activeSeg, baseCmd)
 		return &Diagnostic{
 			Severity:   SeverityError,
 			Message:    fmt.Sprintf("Command '%s' not recognized", baseCmd),
@@ -439,7 +721,7 @@ func Analyze(rawInput string) *Diagnostic {
 			maxD = 2
 		}
 		if match := FindClosestMatch(baseCmd, commonBaseCommands, maxD); match != "" {
-			fixedLine := match + strings.TrimPrefix(activeSeg, baseCmd)
+			fixedLine := match + suffixAfterBase(activeSeg, baseCmd)
 			return &Diagnostic{
 				Severity:   SeverityError,
 				Message:    fmt.Sprintf("Command '%s' not recognized", baseCmd),

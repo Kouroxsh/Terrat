@@ -31,25 +31,22 @@ func drainChannel(ch chan struct{}) {
 	}
 }
 
-// findSearchMatches scans the visible grid of the terminal for all
-// case-insensitive occurrences of query. Column indices are rune-based so
-// they align with grid cells even for multi-byte characters.
+// findSearchMatches scans the terminal's full history (scrollback + grid)
+// for all case-insensitive occurrences of query. Row is the absolute row
+// number (0 is the oldest scrollback row); the canvas maps it to a
+// viewport row when rendering, so highlights stay correct while scrolling.
+// A match spanning wrapped rows comes back as one entry per physical row.
 func findSearchMatches(term *terminal.Terminal, query string) []render.SearchMatch {
 	if query == "" || term == nil {
 		return nil
 	}
 	var matches []render.SearchMatch
-	for y := 0; y < term.Rows(); y++ {
-		for _, m := range terminal.FindRowMatches(term.GetRowString(y), query) {
-			matches = append(matches, render.SearchMatch{
-				Row:      y,
-				StartCol: m.StartCol,
-				EndCol:   m.EndCol,
-			})
-			if len(matches) >= 1000 {
-				return matches
-			}
-		}
+	for _, m := range term.FindMatches(query) {
+		matches = append(matches, render.SearchMatch{
+			Row:      m.AbsRow,
+			StartCol: m.StartCol,
+			EndCol:   m.EndCol,
+		})
 	}
 	return matches
 }

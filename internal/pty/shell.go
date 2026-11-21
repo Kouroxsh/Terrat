@@ -2,6 +2,7 @@ package pty
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -90,22 +91,45 @@ func parseCommandLine(cmdStr string, stat func(string) (os.FileInfo, error)) []s
 	return parts
 }
 
+// executableShell reports whether parts[0] names a runnable binary:
+// an absolute/relative path must exist and have an exec bit, a bare name
+// must resolve on PATH.
+func executableShell(parts []string) bool {
+	if len(parts) == 0 || parts[0] == "" {
+		return false
+	}
+	if strings.Contains(parts[0], "/") {
+		fi, err := os.Stat(parts[0])
+		return err == nil && !fi.IsDir() && fi.Mode()&0111 != 0
+	}
+	_, err := exec.LookPath(parts[0])
+	return err == nil
+}
+
+// ResolveUnixShell picks the shell to run: an explicit -e command wins,
+// then the configured shell, then $SHELL, then /bin/bash, then /bin/sh.
+// Every candidate is validated (M17): a configured or $SHELL value that
+// does not exist used to be returned verbatim, so pty.Start failed and
+// the app exited 1 without ever opening a window.
 func ResolveUnixShell(configuredShell string, customCmd ...string) []string {
 	if len(customCmd) > 0 && customCmd[0] != "" {
 		return customCmd
 	}
 
-	shellParts := parseCommandLine(configuredShell, os.Stat)
-	if len(shellParts) > 0 {
-		return shellParts
+	if parts := parseCommandLine(configuredShell, os.Stat); executableShell(parts) {
+		return parts
 	}
 
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/bash"
-		if _, err := os.Stat(shell); err != nil {
-			shell = "/bin/sh"
+	if sh := os.Getenv("SHELL"); sh != "" {
+		if parts := parseCommandLine(sh, os.Stat); executableShell(parts) {
+			return parts
 		}
 	}
-	return []string{shell}
+
+	for _, cand := range []string{"/bin/bash", "/bin/sh"} {
+		if fi, err := os.Stat(cand); err == nil && !fi.IsDir() && fi.Mode()&0111 != 0 {
+			return []string{cand}
+		}
+	}
+	return []string{"/bin/sh"}
 }

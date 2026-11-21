@@ -220,23 +220,50 @@ func (p *TerminalPTY) Wait() (*os.ProcessState, error) {
 	return p.cmd.ProcessState, err
 }
 
+// processAlive reports whether pid still refers to a live process:
+// Kill(pid, 0) fails with ESRCH only once the pid is gone (EPERM means it
+// exists but cannot be signalled).
+func processAlive(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil || err == syscall.EPERM
+}
+
 func (p *TerminalPTY) IsForegroundShell() bool {
 	if p == nil || p.file == nil || p.cmd == nil || p.cmd.Process == nil {
-		return true
+		return false
+	}
+	// L17: fail closed instead of fail-open — on any error (dead child,
+	// ioctl failure) report "not the foreground shell" so ghost text and
+	// diagnostics are not offered for an app that is actually running.
+	if !processAlive(p.cmd.Process.Pid) {
+		return false
+	}
+	// The fd fetch and the ioctl run under mu: CloseFile closes the same
+	// os.File under mu, and calling Fd() concurrently with Close() is a
+	// data race on the file's internals (flagged by -race).
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.fileClosed || p.file == nil {
+		return false
 	}
 	pgrp, err := unix.IoctlGetInt(int(p.file.Fd()), unix.TIOCGPGRP)
 	if err != nil {
-		return true
+		return false
 	}
 	shellPgid, err := syscall.Getpgid(p.cmd.Process.Pid)
 	if err != nil {
-		shellPgid = p.cmd.Process.Pid
+		return false
 	}
 	return pgrp == shellPgid
 }
 
 func (p *TerminalPTY) GetCwd() string {
 	if p == nil || p.cmd == nil || p.cmd.Process == nil {
+		return ""
+	}
+	// L17: do not trust /proc/<pid>/cwd for a dead (or already reaped and
+	// reused) pid.
+	if !processAlive(p.cmd.Process.Pid) {
 		return ""
 	}
 	cwd, err := os.Readlink(fmt.Sprintf("/proc/%d/cwd", p.cmd.Process.Pid))

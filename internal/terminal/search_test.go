@@ -57,8 +57,12 @@ func TestFindRowMatchesInTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("write failed: %v", err)
 	}
-	matches := FindRowMatches(term.GetRowString(0), "دنیا")
-	if len(matches) != 1 || matches[0].StartCol != 10 || matches[0].EndCol != 13 {
+	// 你好世界 occupies 8 grid columns (each CJK rune is 2 cells), so دنیا
+	// starts at grid column 14, not 10 as the old 1-cell-per-rune layout
+	// assumed. Search runs on the width-aware row text.
+	text, colMap := term.RowText(0)
+	matches := FindRowMatchesCols(text, colMap, "دنیا")
+	if len(matches) != 1 || matches[0].StartCol != 14 || matches[0].EndCol != 17 {
 		t.Fatalf("unexpected matches: %+v", matches)
 	}
 }

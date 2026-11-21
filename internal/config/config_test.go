@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -134,5 +135,108 @@ func TestPortableConfigTakesPrecedenceOverXDG(t *testing.T) {
 	}
 	if got != portablePath {
 		t.Fatalf("expected portable config %q to take precedence, got %q", portablePath, got)
+	}
+}
+
+// M21: one mistyped field must not discard the whole config.
+func TestLoadKeepsValidFieldsOnBadField(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "terrat-config-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	origConfigHome := os.Getenv("XDG_CONFIG_HOME")
+	defer os.Setenv("XDG_CONFIG_HOME", origConfigHome)
+	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	path, err := ConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	bad := `{"theme": "catppuccin-mocha", "font_size": "13", "opacity": 0.9}`
+	if err := os.WriteFile(path, []byte(bad), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Load()
+	if cfg.Theme != "catppuccin-mocha" {
+		t.Fatalf("expected valid theme kept, got %q", cfg.Theme)
+	}
+	if cfg.FontSize != 13.0 {
+		t.Fatalf("expected broken font_size to fall back to 13.0, got %f", cfg.FontSize)
+	}
+	if cfg.Opacity != 0.9 {
+		t.Fatalf("expected valid opacity kept, got %f", cfg.Opacity)
+	}
+}
+
+// M21: a completely corrupt config is backed up and defaults are used.
+func TestLoadCorruptConfigBackedUp(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "terrat-config-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	origConfigHome := os.Getenv("XDG_CONFIG_HOME")
+	defer os.Setenv("XDG_CONFIG_HOME", origConfigHome)
+	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	path, err := ConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{not json at all"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Load()
+	if cfg.Theme != "auto" {
+		t.Fatalf("expected defaults for corrupt config, got theme %q", cfg.Theme)
+	}
+	bak, err := os.ReadFile(path + ".bak")
+	if err != nil {
+		t.Fatalf("expected corrupt config backed up to %s.bak: %v", path, err)
+	}
+	if string(bak) != "{not json at all" {
+		t.Fatalf("unexpected backup content: %q", string(bak))
+	}
+}
+
+// M20: Save must not leave a temp file behind and must write valid JSON.
+func TestSaveAtomicNoTempLeftBehind(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "terrat-config-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	origConfigHome := os.Getenv("XDG_CONFIG_HOME")
+	defer os.Setenv("XDG_CONFIG_HOME", origConfigHome)
+	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	cfg := Load()
+	cfg.Theme = "minecraft"
+	if err := Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(cfg.path + ".tmp"); !os.IsNotExist(err) {
+		t.Fatal("temp file left behind after Save")
+	}
+	data, err := os.ReadFile(cfg.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("saved config is not valid JSON: %v", err)
+	}
+	if decoded["theme"] != "minecraft" {
+		t.Fatalf("expected saved theme minecraft, got %v", decoded["theme"])
 	}
 }

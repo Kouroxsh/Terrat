@@ -33,21 +33,3 @@ func RGB(r, g, b byte) Color {
 func (c Color) ToPixel() uint32 {
 	return uint32(c&0x00ffffff) | 0xff000000
 }
-
-func ANSI256(index int) Color {
-	if index < 0 || index > 255 {
-		return ColorDefaultFG
-	}
-	if index < 16 {
-		return ansi16[index]
-	}
-	if index < 232 {
-		idx := index - 16
-		r := byte((idx / 36) * 51)
-		g := byte(((idx % 36) / 6) * 51)
-		b := byte((idx % 6) * 51)
-		return RGB(r, g, b)
-	}
-	gray := byte(8 + (index-232)*10)
-	return RGB(gray, gray, gray)
-}

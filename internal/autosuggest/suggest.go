@@ -3,10 +3,15 @@ package autosuggest
 import (
 	"bufio"
 	"container/list"
+	"io"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 var defaultCommonCommands = []string{
@@ -70,12 +75,87 @@ func NewEngine() *Engine {
 		maxItems: 2000,
 	}
 
+	// M24: load the real shell history first (most recent first), then the
+	// built-in defaults as fallback. The old order put the defaults first,
+	// so `git st` ghosted `atus` from the default `git status` instead of
+	// the user's own `git stash` from history.
+	e.loadShellHistory()
 	for _, cmd := range defaultCommonCommands {
 		e.addCommandInternal(cmd)
 	}
 
-	e.loadShellHistory()
 	return e
+}
+
+// isTimestampLine reports whether line is a bare `#<digits>` history
+// timestamp (bash HISTTIMEFORMAT), e.g. `#1600000000`.
+func isTimestampLine(line string) bool {
+	if len(line) < 2 || line[0] != '#' {
+		return false
+	}
+	for _, r := range line[1:] {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// maxHistoryFileBytes caps how much of a history file is read (L30):
+// history files are append-only, so the most recent entries live at the
+// end — reading a 50MB .zsh_history in full on every startup just to
+// keep the newest 2000 lines was pure waste.
+const maxHistoryFileBytes = 2 << 20 // 2 MiB tail
+
+// maxHistoryLineBytes caps a single history line (L30): the default
+// bufio.Scanner cap is 64KB, so one very long one-liner truncated the
+// scan and silently dropped every entry below it.
+const maxHistoryLineBytes = 1 << 20 // 1 MiB
+
+// newHistoryScanner returns a scanner over file, positioned at the last
+// maxHistoryFileBytes when the file is larger, so only the recent tail
+// is read. The first line after the seek is partial and skipped.
+func newHistoryScanner(file *os.File) *bufio.Scanner {
+	if info, err := file.Stat(); err == nil && info.Size() > maxHistoryFileBytes {
+		if _, err := file.Seek(info.Size()-maxHistoryFileBytes, io.SeekStart); err == nil {
+			br := bufio.NewReader(file)
+			_, _ = br.ReadString('\n') // skip partial first line
+			scanner := bufio.NewScanner(br)
+			scanner.Buffer(make([]byte, 64*1024), maxHistoryLineBytes)
+			return scanner
+		}
+	}
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), maxHistoryLineBytes)
+	return scanner
+}
+
+// parseZshExtended extracts the command from a zsh extended-history line
+// (": <begin>:<elapsed>;<command>"). ok=false when the line is not in
+// extended format — a plain command starting with ":" (the no-op builtin)
+// must not be mistaken for one. An empty command after the ";" reports
+// ok=true with cmd="" so the caller skips the entry instead of
+// suggesting the raw ": ..." line (L31).
+func parseZshExtended(line string) (cmd string, ok bool) {
+	if !strings.HasPrefix(line, ": ") {
+		return "", false
+	}
+	rest := line[2:]
+	i := 0
+	for i < len(rest) && rest[i] >= '0' && rest[i] <= '9' {
+		i++
+	}
+	if i == 0 || i >= len(rest) || rest[i] != ':' {
+		return "", false
+	}
+	j := i + 1
+	for j < len(rest) && rest[j] >= '0' && rest[j] <= '9' {
+		j++
+	}
+	if j >= len(rest) || rest[j] != ';' {
+		return "", false
+	}
+	return strings.TrimSpace(rest[j+1:]), true
 }
 
 func (e *Engine) loadShellHistory() {
@@ -98,24 +178,26 @@ func (e *Engine) loadShellHistory() {
 			continue
 		}
 
-		scanner := bufio.NewScanner(file)
+		scanner := newHistoryScanner(file)
 		lines := list.New()
 		entries := make(map[string]*list.Element)
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" {
-				continue
+		isZsh := strings.HasSuffix(hf, ".zsh_history")
+		// An entry under assembly: in zsh extended history a new entry
+		// always starts with ": <ts>:<dur>;", so any other line is a
+		// continuation of the current multiline entry (L31) and must be
+		// joined to it instead of suggested as a fragment.
+		var curEntry string
+		hasCur := false
+		flush := func() {
+			if !hasCur {
+				return
 			}
-			// Handle zsh extended history format: ": 1600000000:0;cmd"
-			if strings.HasPrefix(line, ": ") {
-				if semi := strings.Index(line, ";"); semi != -1 && semi+1 < len(line) {
-					line = strings.TrimSpace(line[semi+1:])
-				}
-			}
+			hasCur = false
+			line := curEntry
 			if len(line) >= 2 {
 				if entry, ok := entries[line]; ok {
 					lines.MoveToBack(entry)
-					continue
+					return
 				}
 				if lines.Len() == e.maxItems {
 					oldest := lines.Front()
@@ -125,6 +207,42 @@ func (e *Engine) loadShellHistory() {
 				entries[line] = lines.PushBack(line)
 			}
 		}
+		for scanner.Scan() {
+			raw := scanner.Text()
+			line := strings.TrimSpace(raw)
+			if line == "" {
+				// A blank line inside a multiline zsh entry belongs to it.
+				if isZsh && hasCur {
+					curEntry += "\n"
+				}
+				continue
+			}
+			// M27: bash HISTTIMEFORMAT timestamps look like `#1600000000`
+			// and must never be suggested as commands.
+			if isTimestampLine(line) {
+				flush()
+				continue
+			}
+			// Handle zsh extended history format: ": 1600000000:0;cmd"
+			if cmd, ok := parseZshExtended(line); ok {
+				flush()
+				if cmd != "" {
+					curEntry = cmd
+					hasCur = true
+				}
+				continue
+			}
+			if isZsh && hasCur {
+				// Continuation line: keep the raw line (indentation
+				// included) so the entry stays whole.
+				curEntry += "\n" + raw
+				continue
+			}
+			flush()
+			curEntry = line
+			hasCur = true
+		}
+		flush()
 		_ = scanner.Err()
 		_ = file.Close()
 
@@ -180,6 +298,29 @@ func (e *Engine) Add(cmd string) {
 	e.history[0] = cmd
 }
 
+// foldPrefixLen returns the byte index in s just past the runes that
+// case-fold-match prefix, or -1 when prefix is not a case-insensitive
+// prefix of s. It folds rune by rune (unicode.ToLower): slicing by
+// len(prefix) bytes is wrong when folding changes byte lengths —
+// strings.ToLower("İ") is two runes ("i̇"), so cmd[len(input):] could cut
+// a rune in half and produce invalid UTF-8 in the ghost suffix (L32).
+func foldPrefixLen(s, prefix string) int {
+	si, pi := 0, 0
+	for pi < len(prefix) {
+		if si >= len(s) {
+			return -1
+		}
+		sr, sw := utf8.DecodeRuneInString(s[si:])
+		pr, pw := utf8.DecodeRuneInString(prefix[pi:])
+		if unicode.ToLower(sr) != unicode.ToLower(pr) {
+			return -1
+		}
+		si += sw
+		pi += pw
+	}
+	return si
+}
+
 // Suggest returns the ghost suffix (continuation) for the given input prefix.
 // If cwd is provided, it prioritizes local file/directory path completion (including paths with spaces).
 // Otherwise or as fallback, it searches command history.
@@ -199,17 +340,85 @@ func (e *Engine) Suggest(input string, cwd ...string) string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	lowerInput := strings.ToLower(input)
-
 	for _, cmd := range e.history {
-		lowerCmd := strings.ToLower(cmd)
-		if strings.HasPrefix(lowerCmd, lowerInput) && len(cmd) > len(input) {
-			// Return suffix preserving original case of the match
-			return cmd[len(input):]
+		if idx := foldPrefixLen(cmd, input); idx >= 0 && idx < len(cmd) {
+			// Return suffix preserving original case of the match.
+			return cmd[idx:]
 		}
 	}
 
 	return ""
+}
+
+// dirCacheTTL bounds how stale a directory listing can be (L33).
+const dirCacheTTL = time.Second
+
+type dirCacheEntry struct {
+	entries []os.DirEntry
+	expires time.Time
+}
+
+var (
+	dirCacheMu sync.Mutex
+	dirCache   = map[string]dirCacheEntry{}
+)
+
+// cachedReadDir returns a directory listing, reusing one read less than a
+// second ago. suggestPath runs on every keystroke; without this, a large
+// directory was re-read from disk per keystroke for the same prefix.
+func cachedReadDir(dir string) ([]os.DirEntry, error) {
+	dirCacheMu.Lock()
+	if ent, ok := dirCache[dir]; ok && time.Now().Before(ent.expires) {
+		dirCacheMu.Unlock()
+		return ent.entries, nil
+	}
+	dirCacheMu.Unlock()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	dirCacheMu.Lock()
+	if len(dirCache) > 128 {
+		// Bound the cache: drop everything rather than tracking LRU.
+		dirCache = map[string]dirCacheEntry{}
+	}
+	dirCache[dir] = dirCacheEntry{entries: entries, expires: time.Now().Add(dirCacheTTL)}
+	dirCacheMu.Unlock()
+	return entries, nil
+}
+
+// expandTilde replaces a leading ~, ~/ or ~user[/...] with the absolute
+// home directory (L29). A bare ~ expands to the home directory with a
+// trailing slash so it lists its contents, like ~/. An unknown user (or
+// no home) leaves the token unchanged, so completion falls through to
+// the normal path logic and finds nothing instead of completing from
+// the wrong directory.
+func expandTilde(token string) string {
+	if token == "" || token[0] != '~' {
+		return token
+	}
+	if token == "~" {
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			return home + "/"
+		}
+		return token
+	}
+	if strings.HasPrefix(token, "~/") {
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			return home + token[1:]
+		}
+		return token
+	}
+	rest := token[1:]
+	userPart := rest
+	tail := ""
+	if i := strings.IndexByte(rest, '/'); i >= 0 {
+		userPart, tail = rest[:i], rest[i:]
+	}
+	if u, err := user.Lookup(userPart); err == nil && u.HomeDir != "" {
+		return u.HomeDir + tail
+	}
+	return token
 }
 
 // suggestPath checks the active directory for matching files or folders (supporting spaces and quotes)
@@ -283,44 +492,63 @@ func suggestPath(input string, cwd string) string {
 	}
 	pathToSearch := unescapedToken.String()
 
+	// M26: don't path-complete the command word itself (the first token)
+	// unless it looks like a path — otherwise typing `do` in a directory
+	// containing docker-compose.yml suggests a file instead of the `docker`
+	// command from history.
+	if lastTokenStart == 0 && !isQuoted && !strings.ContainsAny(cleanToken, "/~.") {
+		return ""
+	}
+
+	// L29: expand a leading ~ / ~/ / ~user first, so the directory
+	// and base below are computed from the real path. The old code
+	// special-cased ~ and ~/ in the branches and never resolved ~user
+	// at all; a bare ~ also set basePart "" without listDir, so it
+	// never matched anything.
+	searchPath := expandTilde(pathToSearch)
+
 	// Split directory and base using Linux path separators.
-	normPath := pathToSearch
+	normPath := searchPath
 	dirPart := filepath.Dir(normPath)
 	basePart := filepath.Base(normPath)
 
+	// listDir is set only when the token ends in `/`: the user named a
+	// directory and wants its first entry, not a completion of the name.
+	listDir := false
 	searchDir := cwd
-	if filepath.IsAbs(pathToSearch) || strings.HasPrefix(normPath, "/") {
+	if strings.HasSuffix(searchPath, "/") {
+		listDir = true
+		// M25: a token ending in `/` names a directory — complete *inside*
+		// it (empty base) instead of completing the directory's own name
+		// (`cd /usr/` used to suggest `/`, and `cd ../` nothing at all).
+		dir := strings.TrimSuffix(searchPath, "/")
+		if dir == "" {
+			dir = "/"
+		}
+		if filepath.IsAbs(dir) {
+			searchDir = dir
+		} else {
+			searchDir = filepath.Join(cwd, dir)
+		}
+		basePart = ""
+	} else if filepath.IsAbs(searchPath) {
 		if dirPart == "/" {
 			searchDir = "/"
 		} else {
 			searchDir = filepath.FromSlash(dirPart)
 		}
-	} else if pathToSearch == "~" {
-		if home, err := os.UserHomeDir(); err == nil && home != "" {
-			searchDir = home
-			basePart = ""
-		}
-	} else if strings.HasPrefix(pathToSearch, "~/") && len(pathToSearch) > 2 {
-		if home, err := os.UserHomeDir(); err == nil && home != "" {
-			rem := pathToSearch[2:]
-			d := filepath.Dir(rem)
-			b := filepath.Base(rem)
-			searchDir = filepath.Join(home, filepath.FromSlash(d))
-			basePart = b
-		}
-	} else if strings.Contains(pathToSearch, "/") {
+	} else if strings.Contains(searchPath, "/") {
 		searchDir = filepath.Join(cwd, filepath.FromSlash(dirPart))
 	} else {
 		searchDir = cwd
-		basePart = pathToSearch
+		basePart = searchPath
 	}
 
-	entries, err := os.ReadDir(searchDir)
+	// L33: one listing per directory per second, not one per keystroke.
+	entries, err := cachedReadDir(searchDir)
 	if err != nil {
 		return ""
 	}
-
-	lowerBase := strings.ToLower(basePart)
 
 	for _, entry := range entries {
 		name := entry.Name()
@@ -328,8 +556,10 @@ func suggestPath(input string, cwd string) string {
 			continue // Skip hidden files unless explicitly requested
 		}
 
-		if len(basePart) > 0 && strings.HasPrefix(strings.ToLower(name), lowerBase) && len(name) >= len(basePart) {
-			suffix := name[len(basePart):]
+		// L32: the suffix starts at the rune boundary foldPrefixLen
+		// returns, not at len(basePart) bytes.
+		if idx := foldPrefixLen(name, basePart); (len(basePart) > 0 || listDir) && idx >= 0 {
+			suffix := name[idx:]
 			dirSep := "/"
 			if entry.IsDir() {
 				suffix += dirSep
@@ -359,11 +589,12 @@ func suggestPath(input string, cwd string) string {
 			prevToken = strings.TrimSpace(input[prevTokenStart+1 : lastTokenStart-1])
 		}
 		if len(prevToken) > 0 {
-			targetPrefix := strings.ToLower(prevToken + " ")
+			target := prevToken + " "
 			for _, entry := range entries {
 				name := entry.Name()
-				if strings.HasPrefix(strings.ToLower(name), targetPrefix) {
-					suffix := name[len(targetPrefix):]
+				// L32: rune-boundary suffix, as above.
+				if idx := foldPrefixLen(name, target); idx >= 0 {
+					suffix := name[idx:]
 					dirSep := "/"
 					if entry.IsDir() {
 						suffix += dirSep

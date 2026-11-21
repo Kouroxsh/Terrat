@@ -110,3 +110,41 @@ func TestConcurrentWriteAndClose(t *testing.T) {
 		t.Fatal("writers did not return after Close")
 	}
 }
+
+// TestForegroundAndCwdLiveness (L17): IsForegroundShell must report the
+// running child as foreground and fail closed (false) once it is dead;
+// GetCwd must return "" for a dead pid instead of trusting /proc.
+func TestForegroundAndCwdLiveness(t *testing.T) {
+	p, err := Start(80, 24, 0, 0, "sleep", "30")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	go func() { _, _ = p.Wait() }()
+	// The child becomes the foreground process group asynchronously
+	// (setsid + TIOCSCTTY in the forked child); poll briefly instead of
+	// asserting on a fixed sleep, which flakes under -race.
+	deadline := time.Now().Add(5 * time.Second)
+	for !p.IsForegroundShell() && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !p.IsForegroundShell() {
+		t.Fatalf("IsForegroundShell = false for a live foreground child")
+	}
+	if cwd := p.GetCwd(); cwd == "" {
+		t.Fatalf("GetCwd = empty for a live child")
+	}
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	// Give the reaper a moment; the liveness probe must then fail closed.
+	deadline = time.Now().Add(5 * time.Second)
+	for p.IsForegroundShell() && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if p.IsForegroundShell() {
+		t.Fatalf("IsForegroundShell = true after Close (fail-open)")
+	}
+	if cwd := p.GetCwd(); cwd != "" {
+		t.Fatalf("GetCwd = %q after Close, want empty", cwd)
+	}
+}
