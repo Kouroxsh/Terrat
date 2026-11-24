@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Copy, Check, Terminal, Download, Keyboard, Settings, Bug } from 'lucide-react';
+import { SectionHeader } from './SectionHeader';
 
 export const InstallSection: React.FC = () => {
   const [copiedTab, setCopiedTab] = useState<string | null>(null);
@@ -29,69 +30,69 @@ export const InstallSection: React.FC = () => {
     { key: 'Mouse Middle Click', desc: 'Paste primary selection' },
   ];
 
+  const packages = [
+    { label: '.deb — Debian / Ubuntu', href: 'https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.4' },
+    { label: '.rpm — Fedora / RHEL / openSUSE', href: 'https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.4' },
+    { label: '.pkg.tar.zst — Arch Linux', href: 'https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.4' },
+    { label: '.tar.gz — Portable Linux', href: 'https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.4' },
+  ];
+
   return (
-    <section id="install" className="py-20 hairline-b bg-[#1a1b26]">
-      <div className="max-w-7xl mx-auto px-6">
-        {/* Section Header */}
-        <div className="mb-12">
-          <div className="font-mono text-xs text-[#7aa2f7] uppercase tracking-wider mb-2">
-            INSTALLATION &amp; CONFIGURATION
-          </div>
-          <h2 className="text-3xl sm:text-5xl font-bold tracking-tight text-white mb-3">
-            Install Terrat.
-          </h2>
-          <p className="text-sm sm:text-base text-[#a9b1d6] max-w-2xl">
-            On Linux, Terrat needs an X11 server or XWayland. It builds without CGO.
-          </p>
-        </div>
+    <section id="install" className="py-20 sm:py-24 hairline-b bg-tokyo-bg">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6">
+        <SectionHeader
+          eyebrow="Installation & configuration"
+          title="Install Terrat in minutes."
+          lede="On Linux, Terrat needs an X11 server or XWayland. It builds without CGO."
+        />
 
         {/* Installation Boxes */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12 items-start">
           {/* Method 1: Go Install */}
-          <div className="p-6 bg-[#16161e] border border-[#292e42] rounded-[2px] flex flex-col justify-between">
+          <div className="anim p-6 bg-tokyo-surface border border-tokyo-border rounded-sm hover:border-[#3b4261] flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-3">
-                <span className="font-mono text-xs text-[#7aa2f7] uppercase tracking-wider font-bold">
+                <span className="font-mono text-xs text-tokyo-accent uppercase tracking-wider font-bold">
                   Go Install
                 </span>
-                <Terminal className="w-4 h-4 text-[#7aa2f7]" />
+                <Terminal className="w-4 h-4 text-tokyo-accent" aria-hidden="true" />
               </div>
-              <p className="text-xs text-[#a9b1d6] mb-4">
-                Installs binary directly to your <code>$GOPATH/bin</code>:
+              <p className="text-sm text-[#a9b1d6] mb-4">
+                Installs binary directly to your <code className="text-tokyo-fg">$GOPATH/bin</code>:
               </p>
-              <div className="p-3 bg-[#13141c] border border-[#292e42] rounded-[2px] font-mono text-xs flex items-center justify-between gap-3">
+              <div className="p-3 bg-tokyo-header border border-tokyo-border rounded-sm font-mono text-xs flex items-center justify-between gap-3">
                 <div className="overflow-x-auto min-w-0 flex-1">
-                  <code className="text-[#c0caf5] select-all whitespace-nowrap">go install github.com/Kouroxsh/Terrat/cmd/terrat@latest</code>
+                  <code className="text-tokyo-fg select-all whitespace-nowrap">go install github.com/Kouroxsh/Terrat/cmd/terrat@latest</code>
                 </div>
                 <button
                   onClick={() => copyToClipboard('go install github.com/Kouroxsh/Terrat/cmd/terrat@latest', 'go')}
-                  className="text-[#565f89] hover:text-[#c0caf5] transition-colors shrink-0"
-                  title="Copy command"
+                  aria-label="Copy go install command"
+                  className="anim text-[#a9b1d6] hover:text-white shrink-0"
                 >
-                  {copiedTab === 'go' ? <Check className="w-4 h-4 text-[#9ece6a]" /> : <Copy className="w-4 h-4" />}
+                  {copiedTab === 'go' ? <Check className="w-4 h-4 text-tokyo-green" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
                 </button>
               </div>
             </div>
-            <div className="mt-4 text-[11px] font-mono text-[#565f89]">
-              Ensure <code>~/go/bin</code> is in your <code>$PATH</code>.
+            <div className="mt-4 text-xs font-mono text-[#a9b1d6]">
+              Ensure <code className="text-tokyo-fg">~/go/bin</code> is in your <code className="text-tokyo-fg">$PATH</code>.
             </div>
           </div>
 
           {/* Method 2: Build Linux */}
-          <div className="p-6 bg-[#16161e] border border-[#292e42] rounded-[2px] flex flex-col justify-between">
+          <div className="anim p-6 bg-tokyo-surface border border-tokyo-border rounded-sm hover:border-[#3b4261] flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-3">
-                <span className="font-mono text-xs text-[#9ece6a] uppercase tracking-wider font-bold">
+                <span className="font-mono text-xs text-tokyo-green uppercase tracking-wider font-bold">
                   Linux: Make Install
                 </span>
-                <Download className="w-4 h-4 text-[#9ece6a]" />
+                <Download className="w-4 h-4 text-tokyo-green" aria-hidden="true" />
               </div>
-              <p className="text-xs text-[#a9b1d6] mb-4">
+              <p className="text-sm text-[#a9b1d6] mb-4">
                 Builds the program and installs a desktop launcher and icon:
               </p>
-              <div className="p-3 bg-[#13141c] border border-[#292e42] rounded-[2px] font-mono text-xs flex items-center justify-between gap-3">
+              <div className="p-3 bg-tokyo-header border border-tokyo-border rounded-sm font-mono text-xs flex items-center justify-between gap-3">
                 <div className="overflow-x-auto min-w-0 flex-1">
-                  <pre className="text-[#c0caf5] select-all leading-relaxed whitespace-pre font-mono text-[11px]">{`git clone https://github.com/Kouroxsh/Terrat.git
+                  <pre className="text-tokyo-fg select-all leading-relaxed whitespace-pre font-mono text-xs">{`git clone https://github.com/Kouroxsh/Terrat.git
 cd Terrat && make install`}</pre>
                 </div>
                 <button
@@ -101,62 +102,57 @@ cd Terrat && make install`}</pre>
                       'make'
                     )
                   }
-                  className="text-[#565f89] hover:text-[#c0caf5] transition-colors shrink-0 self-start"
-                  title="Copy commands"
+                  aria-label="Copy make install commands"
+                  className="anim text-[#a9b1d6] hover:text-white shrink-0 self-start"
                 >
-                  {copiedTab === 'make' ? <Check className="w-4 h-4 text-[#9ece6a]" /> : <Copy className="w-4 h-4" />}
+                  {copiedTab === 'make' ? <Check className="w-4 h-4 text-tokyo-green" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
                 </button>
               </div>
             </div>
-            <div className="mt-4 text-[11px] font-mono text-[#565f89]">
-              Installs to <code>~/go/bin/terrat</code> and registers in the app menu.
+            <div className="mt-4 text-xs font-mono text-[#a9b1d6]">
+              Installs to <code className="text-tokyo-fg">~/go/bin/terrat</code> and registers in the app menu.
             </div>
           </div>
 
           {/* Method 3: Download Packages */}
-          <div className="p-6 bg-[#16161e] border border-[#292e42] rounded-[2px] flex flex-col justify-between">
+          <div className="anim p-6 bg-tokyo-surface border border-tokyo-border rounded-sm hover:border-[#3b4261] flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-3">
-                <span className="font-mono text-xs text-[#e0af68] uppercase tracking-wider font-bold">
+                <span className="font-mono text-xs text-tokyo-yellow uppercase tracking-wider font-bold">
                   Download Packages
                 </span>
-                <Download className="w-4 h-4 text-[#e0af68]" />
+                <Download className="w-4 h-4 text-tokyo-yellow" aria-hidden="true" />
               </div>
-              <p className="text-xs text-[#a9b1d6] mb-4">
+              <p className="text-sm text-[#a9b1d6] mb-4">
                 v3.0.4 packages built with nfpm — no build needed:
               </p>
               <div className="flex flex-col gap-2 font-mono text-xs">
-                <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.4" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
-                  <span>.deb — Debian / Ubuntu</span>
-                  <span className="text-[#565f89] shrink-0 whitespace-nowrap">amd64 · arm64</span>
-                </a>
-                <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.4" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
-                  <span>.rpm — Fedora / RHEL / openSUSE</span>
-                  <span className="text-[#565f89] shrink-0 whitespace-nowrap">amd64 · arm64</span>
-                </a>
-                <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.4" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
-                  <span>.pkg.tar.zst — Arch Linux</span>
-                  <span className="text-[#565f89] shrink-0 whitespace-nowrap">amd64 · arm64</span>
-                </a>
-                <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.4" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
-                  <span>.tar.gz — Portable Linux</span>
-                  <span className="text-[#565f89] shrink-0 whitespace-nowrap">amd64 · arm64</span>
-                </a>
+                {packages.map((pkg) => (
+                  <a
+                    key={pkg.label}
+                    href={pkg.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="anim p-3 bg-tokyo-header border border-tokyo-border hover:border-tokyo-accent text-tokyo-fg flex items-center justify-between gap-3"
+                  >
+                    <span>{pkg.label}</span>
+                    <span className="text-[#a9b1d6] shrink-0 whitespace-nowrap">amd64 · arm64</span>
+                  </a>
+                ))}
               </div>
             </div>
-            <div className="mt-4 text-[11px] font-mono text-[#565f89]">
+            <div className="mt-4 text-xs font-mono text-[#a9b1d6]">
               v3.0.4 stable release — see the release page for packages.
             </div>
           </div>
-
         </div>
 
         {/* Bug report callout */}
-        <div className="border border-[#e0af68]/30 bg-[#e0af68]/5 rounded-[2px] p-5 mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 font-mono text-xs">
+        <div className="border border-tokyo-yellow/30 bg-tokyo-yellow/5 rounded-sm p-5 mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 font-mono text-xs">
           <div className="flex items-start gap-3">
-            <Bug className="w-4 h-4 text-[#e0af68] shrink-0 mt-0.5" />
+            <Bug className="w-4 h-4 text-tokyo-yellow shrink-0 mt-0.5" aria-hidden="true" />
             <div>
-              <div className="text-[#e0af68] font-bold uppercase tracking-wider mb-1">
+              <div className="text-tokyo-yellow font-bold uppercase tracking-wider mb-1">
                 Found a bug?
               </div>
               <p className="text-[#a9b1d6] leading-relaxed">
@@ -168,19 +164,19 @@ cd Terrat && make install`}</pre>
             href="https://github.com/Kouroxsh/Terrat/issues"
             target="_blank"
             rel="noopener noreferrer"
-            className="px-3.5 py-2 bg-[#e0af68]/15 hover:bg-[#e0af68]/25 text-[#e0af68] hover:text-white border border-[#e0af68]/40 rounded-[2px] transition-all shrink-0 font-semibold"
+            className="anim px-3.5 py-2 bg-tokyo-yellow/15 hover:bg-tokyo-yellow/25 text-tokyo-yellow hover:text-white border border-tokyo-yellow/40 rounded-sm shrink-0 font-semibold"
           >
             Open GitHub Issue &rarr;
           </a>
         </div>
 
         {/* Configuration snippet */}
-        <div className="border border-[#292e42] bg-[#16161e] rounded-[2px] p-6 mb-8">
-          <div className="flex items-center gap-2 font-mono text-xs text-[#7aa2f7] uppercase tracking-wider mb-4">
-            <Settings className="w-4 h-4" />
+        <div className="border border-tokyo-border bg-tokyo-surface rounded-sm p-6 mb-8">
+          <div className="flex items-center gap-2 font-mono text-xs text-tokyo-accent uppercase tracking-wider mb-4">
+            <Settings className="w-4 h-4" aria-hidden="true" />
             <span>Configuration (~/.config/terrat/config.json)</span>
           </div>
-          <div className="p-4 bg-[#13141c] border border-[#292e42] rounded-[2px] font-mono text-xs text-[#a9b1d6] overflow-x-auto">
+          <div className="p-4 bg-tokyo-header border border-tokyo-border rounded-sm font-mono text-xs text-[#a9b1d6] overflow-x-auto">
             <pre>{`{
   "theme": "auto",
   "font_size": 13.0,
@@ -191,26 +187,26 @@ cd Terrat && make install`}</pre>
   "bracketed_paste": true
 }`}</pre>
           </div>
-          <div className="mt-3 text-[11px] text-[#565f89] font-mono">
+          <div className="mt-3 text-xs text-[#a9b1d6] font-mono">
             Automatically generated on first launch if not present. All settings can be updated at runtime via the Preferences modal.
           </div>
         </div>
 
         {/* Keybindings Table */}
-        <div className="border border-[#292e42] bg-[#16161e] rounded-[2px] p-6">
-          <div className="font-mono text-xs text-[#7aa2f7] uppercase tracking-wider mb-4 flex items-center gap-2">
-            <Keyboard className="w-4 h-4" />
+        <div className="border border-tokyo-border bg-tokyo-surface rounded-sm p-6">
+          <div className="font-mono text-xs text-tokyo-accent uppercase tracking-wider mb-4 flex items-center gap-2">
+            <Keyboard className="w-4 h-4" aria-hidden="true" />
             <span>Default Keyboard Shortcuts</span>
           </div>
 
           <div className="flex flex-wrap justify-center gap-3 font-mono text-xs">
-            {keybindings.map((item, idx) => (
+            {keybindings.map((item) => (
               <div
-                key={idx}
-                className="w-full md:w-[calc(50%-0.375rem)] lg:w-[calc(33.333%-0.5rem)] p-2.5 bg-[#13141c] border border-[#292e42] rounded-[2px] flex items-center justify-between gap-2"
+                key={item.key}
+                className="w-full md:w-[calc(50%-0.375rem)] lg:w-[calc(33.333%-0.5rem)] p-2.5 bg-tokyo-header border border-tokyo-border rounded-sm flex items-center justify-between gap-2"
               >
-                <span className="text-[#e0af68] font-medium">{item.key}</span>
-                <span className="text-[#565f89] text-[11px] text-right">{item.desc}</span>
+                <span className="text-tokyo-yellow font-medium">{item.key}</span>
+                <span className="text-[#a9b1d6] text-right">{item.desc}</span>
               </div>
             ))}
           </div>
