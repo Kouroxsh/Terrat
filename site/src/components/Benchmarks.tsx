@@ -1,5 +1,6 @@
 import React from 'react';
 import { Monitor, Layers } from 'lucide-react';
+import { SectionHeader } from './SectionHeader';
 
 const measurements = [
   { label: 'Plain terminal output', detail: '128 lines', value: '150.5 µs', allocation: '0 B allocated' },
@@ -25,42 +26,39 @@ const platforms = [
 ];
 
 export const Benchmarks: React.FC = () => (
-  <section id="platforms" className="py-20 hairline-b bg-[#13141c]">
-    <div className="max-w-7xl mx-auto px-6">
-      <div className="max-w-3xl mb-10">
-        <div className="font-mono text-xs text-[#7aa2f7] uppercase tracking-wider mb-2">BENCHMARKS</div>
-        <h2 className="text-3xl sm:text-5xl font-bold tracking-tight text-white mb-4">Measured on one Linux system.</h2>
-        <p className="text-sm sm:text-base text-[#a9b1d6] leading-relaxed">
-          These Go microbenchmarks show the cost of selected terminal and rendering operations. They are useful for tracking changes, but do not represent whole-app startup or memory use.
-        </p>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 border border-[#292e42] divide-y sm:divide-y-0 sm:divide-x divide-[#292e42] bg-[#16161e]">
+  <section id="platforms" className="py-20 sm:py-24 hairline-b bg-tokyo-header">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6">
+      <SectionHeader
+        eyebrow="Benchmarks"
+        title="Measured on one Linux system."
+        lede="These Go microbenchmarks show the cost of selected terminal and rendering operations. They are useful for tracking changes, but do not represent whole-app startup or memory use."
+      />
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-px bg-tokyo-border border border-tokyo-border rounded-sm overflow-hidden">
         {measurements.map(({ label, detail, value, allocation }) => (
-          <article key={label} className="p-6 sm:p-7">
+          <article key={label} className="p-6 sm:p-7 bg-tokyo-surface">
             <p className="text-sm font-semibold text-white">{label}</p>
-            <p className="mt-1 text-xs text-[#565f89]">{detail}</p>
-            <p className="mt-6 font-mono text-2xl text-[#7aa2f7]">{value}</p>
+            <p className="mt-1 text-xs text-[#a9b1d6]">{detail}</p>
+            <p className="mt-6 font-mono text-2xl text-tokyo-accent">{value}</p>
             <p className="mt-1 text-xs text-[#a9b1d6]">{allocation} per operation</p>
           </article>
         ))}
       </div>
-      <p className="mt-4 text-xs text-[#565f89] leading-relaxed">
-        Median of five runs · Nov 2026 · AMD EPYC 9D25 (cloud VM) · Linux/amd64 · Go 1.23.0. Rendering measures the CPU canvas only; it excludes native window presentation and shell startup. Reproduce with <code className="text-[#a9b1d6]">go test ./internal/terminal ./internal/render ./internal/autosuggest -run '^$' -bench . -benchmem -benchtime=500ms -count=5</code>.
+      <p className="mt-4 text-xs text-[#a9b1d6] leading-relaxed max-w-4xl">
+        Median of five runs · Nov 2026 · AMD EPYC 9D25 (cloud VM) · Linux/amd64 · Go 1.23.0. Rendering measures the CPU canvas only; it excludes native window presentation and shell startup. Reproduce with <code className="text-tokyo-fg">go test ./internal/terminal ./internal/render ./internal/autosuggest -run '^$' -bench . -benchmem -benchtime=500ms -count=5</code>.
       </p>
 
-      <div className="max-w-2xl mt-16 mb-8">
-        <div className="font-mono text-xs text-[#7aa2f7] uppercase tracking-wider mb-2">PLATFORM SUPPORT</div>
-        <h3 className="text-2xl sm:text-3xl font-bold tracking-tight text-white mb-3">Runs on Linux.</h3>
-        <p className="text-sm text-[#a9b1d6] leading-relaxed">
-          Linux builds need an X11 server or XWayland.
-        </p>
+      <div className="mt-16 sm:mt-20 mb-8 max-w-3xl">
+        <div className="font-mono text-xs text-tokyo-accent uppercase tracking-wider mb-3">Platform support</div>
+        <h3 className="text-h2 font-bold tracking-tight text-white">Runs on Linux.</h3>
+        <p className="text-lede text-[#a9b1d6] mt-3">Linux builds need an X11 server or XWayland.</p>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 border border-[#292e42] divide-y md:divide-y-0 md:divide-x divide-[#292e42] bg-[#16161e]">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-tokyo-border border border-tokyo-border rounded-sm overflow-hidden">
         {platforms.map(({ label, title, detail, icon: Icon }) => (
-          <article key={label} className="p-6 sm:p-7">
+          <article key={label} className="anim p-6 sm:p-7 bg-tokyo-surface hover:bg-tokyo-bg">
             <div className="flex items-center justify-between mb-8">
-              <span className="font-mono text-xs text-[#7aa2f7] uppercase tracking-wider">{label}</span>
-              <Icon aria-hidden="true" className="w-5 h-5 text-[#565f89]" />
+              <span className="font-mono text-xs text-tokyo-accent uppercase tracking-wider">{label}</span>
+              <Icon aria-hidden="true" className="w-5 h-5 text-[#a9b1d6]" />
             </div>
             <h3 className="text-lg font-semibold text-white mb-2">{title}</h3>
             <p className="text-sm text-[#a9b1d6] leading-relaxed">{detail}</p>
