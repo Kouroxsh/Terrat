@@ -222,6 +222,126 @@ func TestTranslateShiftTabAndDeadKeys(t *testing.T) {
 	}
 }
 
+// testIntlKeyHandler builds a KeyHandler with the core mapping of a
+// us-intl (FOUR_LEVEL, single group) layout, as the X server reports
+// it: 7 keysyms per keycode, laid out [L0, L1, L0, L1, L2, L3, L2].
+// Mod5 (0x80) is the Level3 (AltGr) modifier.
+func testIntlKeyHandler() *KeyHandler {
+	const per = 7
+	syms := make([]xproto.Keysym, (256-8+1)*per)
+	set := func(kc xproto.Keycode, row ...xproto.Keysym) {
+		idx := int(kc-8) * per
+		copy(syms[idx:idx+len(row)], row)
+	}
+	set(14, 0x35, 0x25, 0x35, 0x25, 0x20ac, 0xfe5b, 0x20ac)   // 5 / % / € / dead_cedilla
+	set(26, 0x65, 0x45, 0x65, 0x45, 0xe9, 0xc9, 0xe9)         // e / E / é / É
+	set(30, 0x75, 0x55, 0x75, 0x55, 0, 0, 0)                  // u / U
+	set(48, 0xfe51, 0xfe57, 0xfe51, 0xfe57, 0x27, 0x22, 0x27) // dead_acute / dead_diaeresis / ' / "
+	set(53, 0x78, 0x58, 0x78, 0x58, 0, 0, 0)                  // x / X
+	set(54, 0x63, 0x43, 0x63, 0x43, 0, 0, 0)                  // c / C
+	set(65, 0x20, 0x20, 0x20, 0x20, 0, 0, 0)                  // space
+	return &KeyHandler{
+		minKeycode:        8,
+		maxKeycode:        255,
+		keysymsPerKeycode: per,
+		keysyms:           syms,
+		numLockMask:       0x10,
+		level3Mask:        0x80,
+	}
+}
+
+func TestTranslateAltGrAndDeadKeys(t *testing.T) {
+	const mod5 = 0x80 // Level3 / AltGr
+	kh := testIntlKeyHandler()
+	press := func(kc xproto.Keycode, state uint16) string {
+		b, act := kh.Translate(xproto.KeyPressEvent{Detail: kc, State: state})
+		if act != ActionNone {
+			t.Fatalf("keycode %d state 0x%x: unexpected action %v", kc, state, act)
+		}
+		return string(b)
+	}
+	// Plain keys are unchanged.
+	if got := press(26, 0); got != "e" {
+		t.Fatalf("e: expected e, got %q", got)
+	}
+	if got := press(14, 0); got != "5" {
+		t.Fatalf("5: expected 5, got %q", got)
+	}
+	if got := press(26, ModShift); got != "E" {
+		t.Fatalf("Shift+e: expected E, got %q", got)
+	}
+	// AltGr selects the third level: EuroSign, é, apostrophe.
+	if got := press(14, mod5); got != "€" {
+		t.Fatalf("AltGr+5: expected €, got %q", got)
+	}
+	if got := press(26, mod5); got != "é" {
+		t.Fatalf("AltGr+e: expected é, got %q", got)
+	}
+	if got := press(48, mod5); got != "'" {
+		t.Fatalf("AltGr+apostrophe: expected ', got %q", got)
+	}
+	// AltGr+Shift selects the fourth level (dead_cedilla arms, emits nothing).
+	if got := press(14, mod5|ModShift); got != "" {
+		t.Fatalf("AltGr+Shift+5: expected nothing (dead_cedilla), got %q", got)
+	}
+	kh.pendingDead = 0
+
+	// Dead-key composition.
+	if got := press(48, 0); got != "" {
+		t.Fatalf("dead_acute: expected nothing, got %q", got)
+	}
+	if got := press(26, 0); got != "é" {
+		t.Fatalf("dead_acute+e: expected é, got %q", got)
+	}
+	if got := press(48, 0); got != "" {
+		t.Fatalf("dead_acute: expected nothing, got %q", got)
+	}
+	if got := press(26, ModShift); got != "É" {
+		t.Fatalf("dead_acute+Shift+e: expected É, got %q", got)
+	}
+	// No precomposed form: spacing accent + the character.
+	if got := press(48, 0); got != "" {
+		t.Fatalf("dead_acute: expected nothing, got %q", got)
+	}
+	if got := press(53, 0); got != "´x" {
+		t.Fatalf("dead_acute+x: expected ´x, got %q", got)
+	}
+	// Dead key + space is the spacing accent.
+	if got := press(48, 0); got != "" {
+		t.Fatalf("dead_acute: expected nothing, got %q", got)
+	}
+	if got := press(65, 0); got != "´" {
+		t.Fatalf("dead_acute+space: expected ´, got %q", got)
+	}
+	// Dead key + dead key: first one is emitted as spacing, second arms.
+	if got := press(48, 0); got != "" {
+		t.Fatalf("dead_acute: expected nothing, got %q", got)
+	}
+	if got := press(48, 0); got != "´" {
+		t.Fatalf("dead_acute+dead_acute: expected ´, got %q", got)
+	}
+	if got := press(26, 0); got != "é" {
+		t.Fatalf("dead_acute+e after double dead: expected é, got %q", got)
+	}
+	// Dead_diaeresis + u is ü.
+	if got := press(48, ModShift); got != "" {
+		t.Fatalf("dead_diaeresis: expected nothing, got %q", got)
+	}
+	if got := press(30, 0); got != "ü" {
+		t.Fatalf("dead_diaeresis+u: expected ü, got %q", got)
+	}
+	// A modified key cancels the pending dead key.
+	if got := press(48, 0); got != "" {
+		t.Fatalf("dead_acute: expected nothing, got %q", got)
+	}
+	if got := press(54, ModCtrl); got != "\x03" {
+		t.Fatalf("dead_acute then Ctrl+C: expected 0x03, got %q", got)
+	}
+	if got := press(26, 0); got != "e" {
+		t.Fatalf("e after cancelled dead key: expected e, got %q", got)
+	}
+}
+
 func TestTranslateAlt(t *testing.T) {
 	// Alt+printable: ESC + character.
 	kh := testKeyHandler([]xproto.Keysym{'b'})

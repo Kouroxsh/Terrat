@@ -19,10 +19,16 @@ type KeyHandler struct {
 	keysyms           []xproto.Keysym
 	numLockMask       uint16
 	modeSwitchMask    uint16
-	xkbSupported      bool
-	xkbOpcode         byte
-	xkbBaseEvent      byte
-	activeGroup       byte
+	// level3Mask is the modifier holding ISO_Level3_Shift (AltGr). It
+	// selects the third/fourth level of a key (e.g. EuroSign on us-intl),
+	// NOT a keyboard group — it must not be confused with Mode_switch
+	// (modeSwitchMask), which switches groups.
+	level3Mask   uint16
+	pendingDead  xproto.Keysym
+	xkbSupported bool
+	xkbOpcode    byte
+	xkbBaseEvent byte
+	activeGroup  byte
 }
 
 // XKBStateNotifyEvent is delivered when the XKB keyboard layout/group changes.
@@ -76,8 +82,12 @@ func (kh *KeyHandler) detectNumLockMask(X *xgb.Conn) {
 					switch kh.keysyms[idx+c] {
 					case 0xff7f: // XK_Num_Lock
 						kh.numLockMask = mask
-					case 0xff7e, 0xfe08, 0xfe09, 0xfe03: // Mode_switch / ISO_Group_Shift
+					case 0xff7e, 0xfe08, 0xfe09: // Mode_switch / ISO_Group_Shift
 						kh.modeSwitchMask = mask
+					case 0xfe03: // ISO_Level3_Shift (AltGr): a level
+						// modifier, not a group switch — it selects the
+						// third/fourth level of the current group.
+						kh.level3Mask = mask
 					}
 				}
 			}
@@ -113,9 +123,13 @@ func (kh *KeyHandler) initXKB(X *xgb.Conn) {
 	reqSelect[1] = 1 // X_kbSelectEvents
 	xgb.Put16(reqSelect[2:], 4)
 	xgb.Put16(reqSelect[4:], 0x0100) // XkbUseCoreKbd
-	xgb.Put16(reqSelect[6:], 0x0004) // affectWhich: XkbStateNotify (1<<2)
+	// Select both XkbStateNotify (0x0004, group changes) and
+	// XkbMapNotify (0x0002, layout changes): an XKB layout switch sends
+	// MapNotify, not a core MappingNotify, so without it the key map
+	// (dead keys, AltGr) would stay frozen at the startup layout.
+	xgb.Put16(reqSelect[6:], 0x0006) // affectWhich: MapNotify|StateNotify
 	xgb.Put16(reqSelect[8:], 0)
-	xgb.Put16(reqSelect[10:], 0x0004) // selectAll: XkbStateNotify (1<<2)
+	xgb.Put16(reqSelect[10:], 0x0006) // selectAll: MapNotify|StateNotify
 
 	cookieSelect := X.NewCookie(false, false)
 	X.NewRequest(reqSelect, cookieSelect)
@@ -136,11 +150,21 @@ var xkbEventFuncsMu sync.Mutex
 func registerXKBEventFunc(firstEvent byte) {
 	xkbEventFuncsMu.Lock()
 	defer xkbEventFuncsMu.Unlock()
-	if _, ok := xgb.NewEventFuncs[int(firstEvent)]; ok {
-		return
-	}
-	xgb.NewEventFuncs[int(firstEvent)] = func(b []byte) xgb.Event {
-		return XKBStateNotifyEvent{Data: b}
+	// XKB events share one extension base code, with the specific kind
+	// in the second byte: 0 NewKeyboard, 1 MapNotify, 2 StateNotify.
+	// But the X event TYPE is base+kind, so a parser must be registered
+	// for each kind — registering only base+0 (as before) made xgb drop
+	// MapNotify and StateNotify entirely, so layout/group changes were
+	// never seen. All three parse to XKBStateNotifyEvent; the handler
+	// tells them apart by Data[1].
+	for kind := 0; kind <= 2; kind++ {
+		code := int(firstEvent) + kind
+		if _, ok := xgb.NewEventFuncs[code]; ok {
+			continue
+		}
+		xgb.NewEventFuncs[code] = func(b []byte) xgb.Event {
+			return XKBStateNotifyEvent{Data: b}
+		}
 	}
 }
 
@@ -197,13 +221,24 @@ func (kh *KeyHandler) KeySym(ev xproto.KeyPressEvent) xproto.Keysym {
 		group = int(kh.activeGroup)
 	}
 
-	col := group * 2
-	if col >= int(kh.keysymsPerKeycode) {
-		col = 0
+	// coreIndex maps an XKB (group, level) to the column of the core
+	// keyboard mapping row for that key. The X server lays the row out
+	// in two bands: levels 0-1 of every group first (index group*2+level),
+	// then levels 2-3 of every group (index 4+group*2+(level-2)). The
+	// band boundary is 4 because the server always reserves two group
+	// slots in the first band (a single-group layout mirrors group 0
+	// into the second slot). Layouts with three or more groups lay the
+	// second band out differently and are not covered by this formula.
+	coreIndex := func(group, level int) int {
+		if level < 2 {
+			return group*2 + level
+		}
+		return 4 + group*2 + (level - 2)
 	}
 
 	isShift := (ev.State & ModShift) != 0
 	isLock := (ev.State & ModLock) != 0 // CapsLock
+	isLevel3 := kh.level3Mask != 0 && (ev.State&kh.level3Mask) != 0
 
 	isKP := false
 	for c := 0; c < int(kh.keysymsPerKeycode); c++ {
@@ -214,28 +249,44 @@ func (kh *KeyHandler) KeySym(ev xproto.KeyPressEvent) xproto.Keysym {
 		}
 	}
 
-	keysym := kh.keysymAt(idx, col)
-	shiftCol := col + 1
-
+	// Level: bit 0 is Shift, bit 1 is Level3 (AltGr). The keypad has no
+	// Level3 symbols; NumLock inverts Shift there instead.
+	level := 0
 	if isKP {
 		isNumLock := (ev.State & kh.numLockMask) != 0
-		effectiveShift := isShift != isNumLock
-		if effectiveShift && shiftCol < int(kh.keysymsPerKeycode) && kh.keysymAt(idx, shiftCol) != 0 {
-			keysym = kh.keysymAt(idx, shiftCol)
+		if isShift != isNumLock {
+			level = 1
 		}
 	} else {
-		if shiftCol < int(kh.keysymsPerKeycode) && kh.keysymAt(idx, shiftCol) != 0 {
-			if isShift {
-				keysym = kh.keysymAt(idx, shiftCol)
-			}
+		if isShift {
+			level |= 1
+		}
+		if isLevel3 {
+			level |= 2
 		}
 	}
 
-	// Fallback to Group 0 if current group has no keysym
-	if keysym == 0 && col != 0 {
-		keysym = kh.keysymAt(idx, 0)
-		if isShift && kh.keysymsPerKeycode > 1 && kh.keysymAt(idx, 1) != 0 {
-			keysym = kh.keysymAt(idx, 1)
+	keysym := kh.keysymAt(idx, coreIndex(group, level))
+	// Fall back within the group: strip Level3, then Shift, then both.
+	// (A shifted key with no shifted symbol still yields its base key,
+	// as before; an AltGr key with no third-level symbol yields its
+	// unshifted/shifted form rather than nothing.)
+	if keysym == 0 {
+		for _, l := range []int{level & 1, level & 2, 0} {
+			if l == level {
+				continue
+			}
+			if keysym = kh.keysymAt(idx, coreIndex(group, l)); keysym != 0 {
+				break
+			}
+		}
+	}
+	// Fall back to group 0 with the same level cascade.
+	if keysym == 0 && group != 0 {
+		for _, l := range []int{level, level & 1, level & 2, 0} {
+			if keysym = kh.keysymAt(idx, coreIndex(0, l)); keysym != 0 {
+				break
+			}
 		}
 	}
 
@@ -357,6 +408,194 @@ func funcKeySeq(keysym xproto.Keysym, isShift, isAlt, isCtrl bool) []byte {
 	return nil
 }
 
+func encodeRune(r rune) []byte {
+	buf := make([]byte, 4)
+	n := utf8.EncodeRune(buf, r)
+	return buf[:n]
+}
+
+// isDeadKeysym reports whether the keysym is a dead key with compose
+// support (XK_dead_* 0xfe50-0xfe6f, restricted to the ones with a spacing
+// form and a compose table below). Other dead keysyms fall through to
+// the ISO drop in Translate, as before.
+func isDeadKeysym(keysym xproto.Keysym) bool {
+	switch keysym {
+	case 0xfe50, 0xfe51, 0xfe52, 0xfe53, 0xfe54, 0xfe55, 0xfe56, 0xfe57,
+		0xfe58, 0xfe59, 0xfe5a, 0xfe5b, 0xfe5c, 0xfe60, 0xfe61, 0xfe62,
+		0xfe63, 0xfe64, 0xfe65, 0xfe66, 0xfe6e:
+		return true
+	}
+	return false
+}
+
+// deadSpacing is the standalone (spacing) form of a dead key, emitted
+// when it is followed by a key it does not compose with (dead_acute +
+// space is ´, dead_acute + x is ´x).
+func deadSpacing(keysym xproto.Keysym) rune {
+	switch keysym {
+	case 0xfe50: // dead_grave
+		return '\u0060'
+	case 0xfe51: // dead_acute
+		return '\u00b4'
+	case 0xfe52: // dead_circumflex
+		return '\u005e'
+	case 0xfe53: // dead_tilde
+		return '\u007e'
+	case 0xfe54: // dead_macron
+		return '\u00af'
+	case 0xfe55: // dead_breve
+		return '\u02d8'
+	case 0xfe56: // dead_abovedot
+		return '\u02d9'
+	case 0xfe57: // dead_diaeresis
+		return '\u00a8'
+	case 0xfe58: // dead_abovering
+		return '\u02da'
+	case 0xfe59: // dead_doubleacute
+		return '\u02dd'
+	case 0xfe5a: // dead_caron
+		return '\u02c7'
+	case 0xfe5b: // dead_cedilla
+		return '\u00b8'
+	case 0xfe5c: // dead_ogonek
+		return '\u02db'
+	case 0xfe60: // dead_belowdot
+		return '\u002e'
+	case 0xfe61: // dead_hook
+		return '\u02bc'
+	case 0xfe62: // dead_horn
+		return '\u02bc'
+	case 0xfe63: // dead_stroke
+		return '\u002f'
+	case 0xfe64: // dead_abovecomma
+		return '\u02bc'
+	case 0xfe65: // dead_abovereversedcomma
+		return '\u02bd'
+	case 0xfe66: // dead_doublegrave
+		return '\u02f5'
+	case 0xfe6e: // dead_belowcomma
+		return '\u002c'
+	}
+	return ' '
+}
+
+// deadCompose maps a dead keysym to the precomposed character for each
+// base letter, transcribed from the standard X11 compose sequences.
+// A dead key followed by space yields its spacing form (deadSpacing),
+// so space is listed explicitly for every dead key.
+var deadCompose = map[xproto.Keysym]map[rune]rune{
+	0xfe50: { // dead_grave
+		'a': '\u00e0', 'e': '\u00e8', 'i': '\u00ec', 'o': '\u00f2', 'u': '\u00f9',
+		'A': '\u00c0', 'E': '\u00c8', 'I': '\u00cc', 'O': '\u00d2', 'U': '\u00d9',
+		'n': '\u01f9', 'N': '\u01f8', ' ': '\u0060',
+	},
+	0xfe51: { // dead_acute
+		'a': '\u00e1', 'e': '\u00e9', 'i': '\u00ed', 'o': '\u00f3', 'u': '\u00fa', 'y': '\u00fd',
+		'A': '\u00c1', 'E': '\u00c9', 'I': '\u00cd', 'O': '\u00d3', 'U': '\u00da', 'Y': '\u00dd',
+		'c': '\u0107', 'C': '\u0106', 'n': '\u0144', 'N': '\u0143', 's': '\u015b', 'S': '\u015a',
+		'z': '\u017a', 'Z': '\u0179', 'l': '\u013a', 'L': '\u0139', 'r': '\u0155', 'R': '\u0154',
+		'g': '\u01f5', 'G': '\u01f4', ' ': '\u00b4',
+	},
+	0xfe52: { // dead_circumflex
+		'a': '\u00e2', 'e': '\u00ea', 'i': '\u00ee', 'o': '\u00f4', 'u': '\u00fb',
+		'A': '\u00c2', 'E': '\u00ca', 'I': '\u00ce', 'O': '\u00d4', 'U': '\u00db',
+		'c': '\u0109', 'C': '\u0108', 'g': '\u011d', 'G': '\u011c', 'h': '\u0125', 'H': '\u0124',
+		'j': '\u0135', 'J': '\u0134', 's': '\u015d', 'S': '\u015c', 'w': '\u0175', 'W': '\u0174',
+		'y': '\u0177', 'Y': '\u0176', ' ': '\u005e',
+	},
+	0xfe53: { // dead_tilde
+		'a': '\u00e3', 'e': '\u1ebd', 'i': '\u0129', 'o': '\u00f5', 'u': '\u0169',
+		'A': '\u00c3', 'E': '\u1ebc', 'I': '\u0128', 'O': '\u00d5', 'U': '\u0168',
+		'n': '\u00f1', 'N': '\u00d1', ' ': '\u007e',
+	},
+	0xfe54: { // dead_macron
+		'a': '\u0101', 'e': '\u0113', 'i': '\u012b', 'o': '\u014d', 'u': '\u016b',
+		'A': '\u0100', 'E': '\u0112', 'I': '\u012a', 'O': '\u014c', 'U': '\u016a',
+		'g': '\u1e21', 'G': '\u1e20', ' ': '\u00af',
+	},
+	0xfe55: { // dead_breve
+		'a': '\u0103', 'e': '\u0115', 'i': '\u012d', 'o': '\u014f', 'u': '\u016d',
+		'A': '\u0102', 'E': '\u0114', 'I': '\u012c', 'O': '\u014e', 'U': '\u016c',
+		'g': '\u011f', 'G': '\u011e', ' ': '\u02d8',
+	},
+	0xfe56: { // dead_abovedot
+		'c': '\u010b', 'C': '\u010a', 'e': '\u0117', 'E': '\u0116', 'g': '\u0121', 'G': '\u0120',
+		'z': '\u017c', 'Z': '\u017b', ' ': '\u02d9',
+	},
+	0xfe57: { // dead_diaeresis
+		'a': '\u00e4', 'e': '\u00eb', 'i': '\u00ef', 'o': '\u00f6', 'u': '\u00fc', 'y': '\u00ff',
+		'A': '\u00c4', 'E': '\u00cb', 'I': '\u00cf', 'O': '\u00d6', 'U': '\u00dc', 'Y': '\u0178',
+		' ': '\u00a8',
+	},
+	0xfe58: { // dead_abovering
+		'a': '\u00e5', 'A': '\u00c5', 'u': '\u016f', 'U': '\u016e', ' ': '\u02da',
+	},
+	0xfe59: { // dead_doubleacute
+		'o': '\u0151', 'u': '\u0171', 'O': '\u0150', 'U': '\u0170', ' ': '\u02dd',
+	},
+	0xfe5a: { // dead_caron
+		'a': '\u01ce', 'A': '\u01cd', 'c': '\u010d', 'C': '\u010c', 'd': '\u010f', 'D': '\u010e',
+		'e': '\u011b', 'E': '\u011a', 'g': '\u01e7', 'G': '\u01e6', 'h': '\u021f', 'H': '\u021e',
+		'i': '\u01d0', 'I': '\u01cf', 'j': '\u01f0', 'k': '\u01e9', 'K': '\u01e8',
+		'l': '\u013e', 'L': '\u013d', 'n': '\u0148', 'N': '\u0147', 'o': '\u01d2', 'O': '\u01d1',
+		'r': '\u0159', 'R': '\u0158', 's': '\u0161', 'S': '\u0160', 't': '\u0165', 'T': '\u0164',
+		'u': '\u01d4', 'U': '\u01d3', 'z': '\u017e', 'Z': '\u017d', ' ': '\u02c7',
+	},
+	0xfe5b: { // dead_cedilla
+		'c': '\u00e7', 'C': '\u00c7', 's': '\u015f', 'S': '\u015e', 't': '\u0163', 'T': '\u0162',
+		'n': '\u0146', 'N': '\u0145', 'r': '\u0157', 'R': '\u0156', 'l': '\u013c', 'L': '\u013b',
+		'g': '\u0123', 'G': '\u0122', 'k': '\u0137', 'K': '\u0136', ' ': '\u00b8',
+	},
+	0xfe5c: { // dead_ogonek
+		'a': '\u0105', 'e': '\u0119', 'i': '\u012f', 'o': '\u01eb', 'u': '\u0173',
+		'A': '\u0104', 'E': '\u0118', 'I': '\u012e', 'O': '\u01ea', 'U': '\u0172',
+		' ': '\u02db',
+	},
+	0xfe60: { // dead_belowdot
+		'a': '\u1ea1', 'e': '\u1eb9', 'i': '\u1ecb', 'o': '\u1ecd', 'u': '\u1ee5', 'y': '\u1ef5',
+		'A': '\u1ea0', 'E': '\u1eb8', 'I': '\u1eca', 'O': '\u1ecc', 'U': '\u1ee4', 'Y': '\u1ef4',
+		' ': '\u002e',
+	},
+	0xfe61: { // dead_hook
+		'a': '\u1ea3', 'e': '\u1ebb', 'i': '\u1ec9', 'o': '\u1ecf', 'u': '\u1ee7', 'y': '\u1ef7',
+		'A': '\u1ea2', 'E': '\u1eba', 'I': '\u1ec8', 'O': '\u1ece', 'U': '\u1ee6', 'Y': '\u1ef6',
+		' ': '\u02bc',
+	},
+	0xfe62: { // dead_horn
+		'o': '\u01a1', 'u': '\u01b0', 'O': '\u01a0', 'U': '\u01af', ' ': '\u02bc',
+	},
+	0xfe63: { // dead_stroke
+		'o': '\u00f8', 'O': '\u00d8', 'l': '\u0142', 'L': '\u0141', 'd': '\u0111', 'D': '\u0110',
+		'h': '\u0127', 'H': '\u0126', 't': '\u0167', 'T': '\u0166', ' ': '\u002f',
+	},
+	0xfe64: { // dead_abovecomma
+		' ': '\u02bc',
+	},
+	0xfe65: { // dead_abovereversedcomma
+		' ': '\u02bd',
+	},
+	0xfe66: { // dead_doublegrave
+		'a': '\u0201', 'e': '\u0205', 'i': '\u0209', 'o': '\u020d', 'u': '\u0215',
+		'A': '\u0200', 'E': '\u0204', 'I': '\u0208', 'O': '\u020c', 'U': '\u0214',
+		'r': '\u0211', 'R': '\u0210', ' ': '\u02f5',
+	},
+	0xfe6e: { // dead_belowcomma
+		's': '\u0219', 'S': '\u0218', 't': '\u021b', 'T': '\u021a', ' ': '\u002c',
+	},
+}
+
+// composeDead returns the precomposed character for a dead key followed
+// by a base letter, or false when the combination has no precomposed
+// form (the caller then emits the dead key's spacing form instead).
+func composeDead(dead xproto.Keysym, base rune) (rune, bool) {
+	if m, ok := deadCompose[dead]; ok {
+		if r, ok := m[base]; ok {
+			return r, true
+		}
+	}
+	return 0, false
+}
+
 func (kh *KeyHandler) Translate(ev xproto.KeyPressEvent, flags ...bool) ([]byte, ActionType) {
 	keysym := kh.KeySym(ev)
 	if keysym == 0 {
@@ -382,6 +621,37 @@ func (kh *KeyHandler) Translate(ev xproto.KeyPressEvent, flags ...bool) ([]byte,
 			return []byte("\x1b\x1b[Z"), ActionNone
 		}
 		return []byte("\x1b[Z"), ActionNone
+	}
+
+	// Dead keys (0xfe50-0xfe6f) are not characters on their own: the
+	// press is remembered and combined with the next character key
+	// (dead_acute + e is é). A dead key followed by another dead key
+	// emits the first one's spacing form and arms the second. Any other
+	// key cancels a pending dead key without composing (see below).
+	if isDeadKeysym(keysym) {
+		if kh.pendingDead != 0 {
+			prev := kh.pendingDead
+			kh.pendingDead = keysym
+			return encodeRune(deadSpacing(prev)), ActionNone
+		}
+		kh.pendingDead = keysym
+		return nil, ActionNone
+	}
+	if kh.pendingDead != 0 {
+		if r, ok := KeysymToRune(keysym); ok && !isCtrl && !isAlt &&
+			(keysym < 0xff00 || (keysym&0xff000000) == 0x01000000) {
+			dead := kh.pendingDead
+			kh.pendingDead = 0
+			if composed, ok := composeDead(dead, r); ok {
+				return encodeRune(composed), ActionNone
+			}
+			// No precomposed form: spacing accent + the character,
+			// exactly as X11 compose does (dead_acute + x is ´x).
+			return append(encodeRune(deadSpacing(dead)), encodeRune(r)...), ActionNone
+		}
+		// Not a character key (or a modified one): the pending dead key
+		// is discarded and the key is handled normally below.
+		kh.pendingDead = 0
 	}
 
 	// Dead keys (0xfe50+), compose/multi-key and the other ISO function
