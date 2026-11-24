@@ -1,6 +1,5 @@
 import React from 'react';
 import { Network, Cpu, Layers, Terminal } from 'lucide-react';
-import { SectionHeader } from './SectionHeader';
 
 export const Architecture: React.FC = () => {
   const pillars = [
@@ -27,30 +26,38 @@ export const Architecture: React.FC = () => {
   ];
 
   return (
-    <section id="architecture" className="py-20 sm:py-24 hairline-b bg-tokyo-header">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6">
-        <SectionHeader
-          eyebrow="Implementation"
-          title="How it works"
-          lede="Terrat uses X11 or XWayland to draw its window. It builds without CGO; each tab has its own shell session and terminal state."
-        />
+    <section id="architecture" className="py-20 hairline-b bg-[#13141c]">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="max-w-3xl mb-14">
+          <div className="font-mono text-xs text-[#7aa2f7] uppercase tracking-wider mb-2">
+            IMPLEMENTATION
+          </div>
+          <h2 className="text-3xl sm:text-5xl font-bold tracking-tight text-white mb-4">
+            How it works
+          </h2>
+          <p className="text-sm sm:text-base text-[#a9b1d6] leading-relaxed">
+            Terrat uses X11 or XWayland to draw its window. It builds without CGO; each tab has its own shell session and terminal state.
+          </p>
+        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {pillars.map((item) => {
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {pillars.map((item, idx) => {
             const Icon = item.icon;
             return (
-              <article
-                key={item.title}
-                className="anim p-6 bg-tokyo-surface border border-tokyo-border rounded-sm hover:border-[#3b4261] hover:-translate-y-0.5"
+              <div
+                key={idx}
+                className="p-6 bg-[#16161e] border border-[#292e42] rounded-[2px] hover:border-[#3b4261] transition-colors"
               >
-                <div className="mb-5">
-                  <div className="w-fit p-2.5 bg-tokyo-bg border border-tokyo-border rounded-sm">
-                    <Icon className="w-5 h-5 text-tokyo-accent" aria-hidden="true" />
+                <div className="mb-4">
+                  <div className="w-fit p-2 bg-[#1a1b26] border border-[#292e42] rounded-[2px]">
+                    <Icon className="w-5 h-5 text-[#7aa2f7]" />
                   </div>
                 </div>
                 <h3 className="text-lg font-bold text-white mb-2">{item.title}</h3>
-                <p className="text-sm text-[#a9b1d6] leading-relaxed">{item.desc}</p>
-              </article>
+                <p className="text-xs text-[#a9b1d6] leading-relaxed">
+                  {item.desc}
+                </p>
+              </div>
             );
           })}
         </div>
