@@ -39,7 +39,7 @@ export const Benchmarks: React.FC = () => (
           <article key={label} className="p-6 sm:p-7 bg-tokyo-surface">
             <p className="text-sm font-semibold text-white">{label}</p>
             <p className="mt-1 text-xs text-[#a9b1d6]">{detail}</p>
-            <p className="mt-6 font-mono text-2xl text-tokyo-accent">{value}</p>
+            <p className="mt-6 font-mono text-2xl tabular-nums text-tokyo-accent">{value}</p>
             <p className="mt-1 text-xs text-[#a9b1d6]">{allocation} per operation</p>
           </article>
         ))}
