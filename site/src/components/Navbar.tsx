@@ -18,7 +18,7 @@ export const Navbar: React.FC = () => {
         <div className="flex items-center gap-3">
           <img src="./icon.png" alt="Terrat Logo" className="w-8 h-8 rounded-full border border-[#292e42]" />
           <span className="font-mono font-bold tracking-wider text-white text-lg">TERRAT</span>
-          <span className="font-mono text-[11px] px-2 py-0.5 border border-[#292e42] text-[#e0af68]">v3.0.0</span>
+          <span className="font-mono text-[11px] px-2 py-0.5 border border-[#292e42] text-[#e0af68]">v3.0.1</span>
         </div>
 
         {/* Navigation Links */}
