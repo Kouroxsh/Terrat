@@ -279,7 +279,7 @@ func rowCellsToRunes(row []Cell, start, end int) []rune {
 			r = ' '
 		}
 		out = append(out, r)
-		out = append(out, cell.Extra...)
+		out = append(out, cell.ExtraRunes()...)
 	}
 	return out
 }
@@ -485,7 +485,7 @@ func (t *Terminal) GetSelectedText() string {
 				r = ' '
 			}
 			lineRunes = append(lineRunes, r)
-			lineRunes = append(lineRunes, cell.Extra...)
+			lineRunes = append(lineRunes, cell.ExtraRunes()...)
 		}
 
 		// L13: when the next selected row continues this logical line

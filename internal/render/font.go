@@ -147,10 +147,12 @@ func NewFontEngine(fontSize float64) (*FontEngine, error) {
 
 	fe.precacheASCII()
 
-	// Load fallback fonts in the background (M28) instead of lazily on the
-	// first non-ASCII glyph, which used to stall the render loop.
-	fe.startFallbackLoad()
-
+	// Fallback fonts are NOT loaded here: they are read lazily in the
+	// background on the first non-ASCII glyph the main face lacks (see
+	// rasterizeRune). Loading them eagerly at startup cost ~6 ms and
+	// ~24 MB of allocations on every engine creation for fonts the
+	// session might never use; the lazy load keeps startup cheap while
+	// still never blocking the render loop (M28).
 	return fe, nil
 }
 
@@ -224,6 +226,16 @@ func (fe *FontEngine) fallbackSnapshot() []fallbackFont {
 	return out
 }
 
+// fallbacksReady reports whether the background fallback load has
+// finished. A notdef rendered while it is still loading is provisional:
+// the glyph may exist in a fallback font that has not been read yet, so
+// it must not be cached (see rasterizeRune).
+func (fe *FontEngine) fallbacksReady() bool {
+	fe.fbMu.RLock()
+	defer fe.fbMu.RUnlock()
+	return fe.fallbacksLoaded
+}
+
 // startFallbackLoad kicks off one background load of the fallback fonts.
 // The candidate list is snapshotted here so the loader never reads the
 // package-level variable from the goroutine.
@@ -237,8 +249,10 @@ func (fe *FontEngine) precacheASCII() {
 	defer fe.mu.Unlock()
 	for r := rune(32); r < 127; r++ {
 		idx := int(r - 32)
-		fe.asciiCache[idx][0] = fe.rasterizeRune(r, false, fe.charWidth)
-		fe.asciiCache[idx][1] = fe.rasterizeRune(r, true, fe.charWidth)
+		mask, _ := fe.rasterizeRune(r, false, fe.charWidth)
+		fe.asciiCache[idx][0] = mask
+		mask, _ = fe.rasterizeRune(r, true, fe.charWidth)
+		fe.asciiCache[idx][1] = mask
 	}
 }
 
@@ -385,11 +399,13 @@ func (fe *FontEngine) GetGlyph(r rune, bold bool) *GlyphMask {
 		return mask
 	}
 
-	mask := fe.rasterizeRune(r, bold, fe.charWidth)
-	if len(fe.otherCache) >= 4096 {
-		evictQuarter(fe.otherCache)
+	mask, cacheable := fe.rasterizeRune(r, bold, fe.charWidth)
+	if cacheable {
+		if len(fe.otherCache) >= 4096 {
+			evictQuarter(fe.otherCache)
+		}
+		fe.otherCache[key] = mask
 	}
-	fe.otherCache[key] = mask
 	return mask
 }
 
@@ -425,17 +441,19 @@ func (fe *FontEngine) GetWideGlyph(r rune, bold bool) *GlyphMask {
 	if mask, ok := fe.wideCache[key]; ok {
 		return mask
 	}
-	mask := fe.rasterizeRune(r, bold, 2*fe.charWidth)
-	if len(fe.wideCache) >= 4096 {
-		evictQuarter(fe.wideCache)
+	mask, cacheable := fe.rasterizeRune(r, bold, 2*fe.charWidth)
+	if cacheable {
+		if len(fe.wideCache) >= 4096 {
+			evictQuarter(fe.wideCache)
+		}
+		fe.wideCache[key] = mask
 	}
-	fe.wideCache[key] = mask
 	return mask
 }
 
-func (fe *FontEngine) rasterizeRune(r rune, bold bool, width int) *GlyphMask {
+func (fe *FontEngine) rasterizeRune(r rune, bold bool, width int) (*GlyphMask, bool) {
 	if box := renderBoxOrBlock(r, width, fe.charHeight); box != nil {
-		return box
+		return box, true
 	}
 
 	useFace := fe.face
@@ -445,8 +463,11 @@ func (fe *FontEngine) rasterizeRune(r rune, bold bool, width int) *GlyphMask {
 	// fonts, which are loaded in the background (M28) — this path never
 	// does file I/O, so it is safe under the terminal read-lock. When no
 	// main TTF was found at all (basicfont fallback), every non-ASCII
-	// rune goes through the fallbacks too.
+	// rune goes through the fallbacks too. The load starts lazily on
+	// the first such glyph instead of at engine creation, so startup
+	// stays cheap; startFallbackLoad is idempotent.
 	if r >= 128 && (fe.ttf == nil || fe.ttf.Index(r) == 0) {
+		fe.startFallbackLoad()
 		found = false
 		for _, fb := range fe.fallbackSnapshot() {
 			if fb.has(r) {
@@ -460,7 +481,11 @@ func (fe *FontEngine) rasterizeRune(r rune, bold bool, width int) *GlyphMask {
 	if !found {
 		// M29: a missing glyph renders as a visible hollow box (.notdef),
 		// not an invisible blank that is indistinguishable from a space.
-		return renderNotdef(width, fe.charHeight)
+		// The mask is only cacheable once the fallback load has
+		// finished: before that, the glyph may exist in a fallback font
+		// that has not been read yet, and caching the box would leave
+		// it a hollow box until the cache evicts.
+		return renderNotdef(width, fe.charHeight), fe.fallbacksReady()
 	}
 
 	// L62: glyphs whose ink starts left of the origin (negative left
@@ -503,7 +528,7 @@ func (fe *FontEngine) rasterizeRune(r rune, bold bool, width int) *GlyphMask {
 		}
 	}
 
-	return mask
+	return mask, true
 }
 
 func (fe *FontEngine) Close() {

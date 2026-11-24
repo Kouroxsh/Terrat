@@ -2,11 +2,11 @@ import React from 'react';
 import { Monitor, Layers } from 'lucide-react';
 
 const measurements = [
-  { label: 'Plain terminal output', detail: '128 lines', value: '95.3 µs', allocation: '0 B allocated' },
-  { label: 'ANSI-colored output', detail: '128 lines', value: '119.4 µs', allocation: '2 KB allocated' },
-  { label: 'Frame render', detail: '1024 × 640 canvas', value: '973 µs', allocation: '32 B allocated' },
-  { label: 'Frame render with search', detail: '1024 × 640 canvas', value: '2.06 ms', allocation: '32 B allocated' },
-  { label: 'Font engine startup', detail: 'Create and close', value: '1.96 ms', allocation: '677 KB allocated' },
+  { label: 'Plain terminal output', detail: '128 lines', value: '150.5 µs', allocation: '0 B allocated' },
+  { label: 'ANSI-colored output', detail: '128 lines', value: '183.2 µs', allocation: '2 KB allocated' },
+  { label: 'Frame render', detail: '1024 × 640 canvas', value: '989.9 µs', allocation: '32 B allocated' },
+  { label: 'Frame render with search', detail: '1024 × 640 canvas', value: '2.21 ms', allocation: '32 B allocated' },
+  { label: 'Font engine startup', detail: 'Create and close', value: '1.53 ms', allocation: '703 KB allocated' },
 ];
 
 const platforms = [
@@ -45,7 +45,7 @@ export const Benchmarks: React.FC = () => (
         ))}
       </div>
       <p className="mt-4 text-xs text-[#565f89] leading-relaxed">
-        Median of five runs · Intel Core i5-8500 @ 3.00 GHz · Linux/amd64 · Go 1.22.6. Rendering measures the CPU canvas only; it excludes native window presentation and shell startup. Reproduce with <code className="text-[#a9b1d6]">go test ./internal/terminal ./internal/render ./internal/autosuggest -run '^$' -bench . -benchmem -benchtime=500ms -count=5</code>.
+        Median of five runs · AMD EPYC 9D25 (cloud VM) · Linux/amd64 · Go 1.23.0. Rendering measures the CPU canvas only; it excludes native window presentation and shell startup. Reproduce with <code className="text-[#a9b1d6]">go test ./internal/terminal ./internal/render ./internal/autosuggest -run '^$' -bench . -benchmem -benchtime=500ms -count=5</code>.
       </p>
 
       <div className="max-w-2xl mt-16 mb-8">

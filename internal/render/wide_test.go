@@ -1,6 +1,9 @@
 package render
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // TestGetWideGlyphDoubleWidth verifies a wide rune's glyph mask spans two
 // cells, so the renderer can paint CJK/emoji across the lead cell and its
@@ -11,6 +14,24 @@ func TestGetWideGlyphDoubleWidth(t *testing.T) {
 		t.Fatalf("failed to initialize font engine: %v", err)
 	}
 	defer fe.Close()
+
+	// The fallback load is lazy: the first wide glyph only kicks it off,
+	// and a notdef rendered while it is still loading is deliberately
+	// not cached. Wait for the load to finish before asserting caching.
+	_ = fe.GetWideGlyph('世', false)
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		fe.fbMu.RLock()
+		loaded := fe.fallbacksLoaded
+		fe.fbMu.RUnlock()
+		if loaded {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("background fallback load did not complete")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	for _, r := range []rune{'世', '界', '😀'} {
 		mask := fe.GetWideGlyph(r, false)

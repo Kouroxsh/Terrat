@@ -24,6 +24,9 @@ func TestCJKTTCLoadsAsFallback(t *testing.T) {
 	}
 	defer fe.Close()
 
+	// Kick off the lazy load with a CJK rune the main face lacks.
+	_ = fe.GetWideGlyph('世', false)
+
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		fe.fbMu.RLock()

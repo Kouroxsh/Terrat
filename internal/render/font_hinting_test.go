@@ -55,9 +55,10 @@ func TestFontEngineCellBoundsAfterZoom(t *testing.T) {
 	}
 }
 
-// M28: fallback fonts load once in the background at startup, never
-// lazily under the terminal read-lock. M29: a rune no font covers renders
-// as a visible .notdef box, not a blank.
+// M28: fallback fonts load once in the background, never lazily under
+// the terminal read-lock — triggered by the first non-ASCII glyph the
+// main face lacks, so engine creation itself stays cheap. M29: a rune
+// no font covers renders as a visible .notdef box, not a blank.
 func TestFallbackFontsLoadInBackground(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "mono.ttf")
 	if err := os.WriteFile(path, gomono.TTF, 0600); err != nil {
@@ -72,6 +73,9 @@ func TestFallbackFontsLoadInBackground(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer fe.Close()
+	// Kick off the lazy load with a rune no font covers; the load runs
+	// in the background, so this call returns immediately.
+	_ = fe.GetGlyph('\U0010ffff', false)
 	// Wait for the background load to finish (it reads one tiny test font).
 	deadline := time.Now().Add(5 * time.Second)
 	for {
