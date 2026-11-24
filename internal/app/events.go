@@ -191,18 +191,16 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 		}
 		e = lastMotion
 
-		if (e.State & platform.ButtonMask1) == 0 {
-			if a.isSelecting {
-				a.isSelecting = false
-				a.dragScrollDelta = 0
-			}
-			if a.isDraggingScrollbar {
-				a.isDraggingScrollbar = false
-			}
-		}
-
+		// A drag ends on ButtonRelease, not on a motion event: a motion
+		// generated before the press can arrive after it with no button
+		// in its state, and clearing the drag on it cancels the drag
+		// before it starts (the scrollbar thumb would never move).
+		// Only update while the button is held; a motion without it is
+		// ignored — stale, or released outside the window.
 		if a.isDraggingScrollbar {
-			a.updateScrollbar(int(e.EventY))
+			if (e.State & platform.ButtonMask1) != 0 {
+				a.updateScrollbar(int(e.EventY))
+			}
 			return false
 		}
 
@@ -376,18 +374,27 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 				return false
 			}
 
-			dir := platform.GetResizeDirection(int(e.EventX), int(e.EventY), int(a.currentWidth), int(a.currentHeight), 8)
-			if dir != platform.ResizeNone {
-				a.win.StartResize(dir, e.RootX, e.RootY)
-				return false
-			}
-
+			// Scrollbar first: its 5px thumb sits at the very right edge
+			// (width-7..width-2), fully inside the 8px resize margin
+			// below. If the resize check ran first, every press on the
+			// scrollbar would start a resize instead and the scrollbar
+			// could never be grabbed. The right edge below the header
+			// is therefore the scrollbar's; resizing still works from
+			// the bottom, left and top edges and the other corners.
 			if int(e.EventX) >= int(a.currentWidth)-16 && int(e.EventY) >= render.HeaderHeight {
 				if activeTerm.ScrollbackLen() > 0 {
+					a.isSelecting = false
+					a.dragScrollDelta = 0
 					a.isDraggingScrollbar = true
 					a.updateScrollbar(int(e.EventY))
 					return false
 				}
+			}
+
+			dir := platform.GetResizeDirection(int(e.EventX), int(e.EventY), int(a.currentWidth), int(a.currentHeight), 8)
+			if dir != platform.ResizeNone {
+				a.win.StartResize(dir, e.RootX, e.RootY)
+				return false
 			}
 
 			if int(e.EventY) < render.HeaderHeight {
@@ -489,6 +496,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 
 			switch a.clickCount {
 			case 1:
+				a.isDraggingScrollbar = false
 				a.isSelecting = true
 				a.dragScrollDelta = 0
 				a.lastDragCol = cx
@@ -1008,6 +1016,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 
 	case platform.FocusOutEvent:
 		a.isSelecting = false
+		a.isDraggingScrollbar = false
 		if a.hoveredURL != nil {
 			a.hoveredURL = nil
 			a.triggerRedraw()

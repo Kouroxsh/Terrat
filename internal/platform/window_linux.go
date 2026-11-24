@@ -145,7 +145,12 @@ func NewWindow(title string, width, height uint16, iconPath string, iconData []b
 			xproto.EventMaskButtonRelease |
 			xproto.EventMaskPointerMotion |
 			xproto.EventMaskButtonMotion |
-			xproto.EventMaskPropertyChange,
+			xproto.EventMaskPropertyChange |
+			// KeymapStateMask: the server sends KeymapNotify when the
+			// keyboard layout changes (setxkbmap, desktop switcher),
+			// which is how the app learns the map changed — see the
+			// KeymapNotifyEvent case below.
+			xproto.EventMaskKeymapState,
 	)
 
 	createMask := uint32(
@@ -1458,6 +1463,13 @@ func (w *Window) handleEvent(ev xgb.Event) bool {
 			if e.Data[1] == 2 { // XkbStateNotify
 				w.keyHandler.SetGroup(e.Data[13])
 			}
+			if e.Data[1] == 1 { // XkbMapNotify: layout changed while
+				// running (setxkbmap, desktop switcher). The server
+				// sends this, not a core MappingNotify, so re-read
+				// the map here or dead keys/AltGr stay frozen at the
+				// startup layout.
+				_ = w.keyHandler.RefreshMapping(w.X)
+			}
 		}
 	case xproto.MappingNotifyEvent:
 		if w.keyHandler != nil {
@@ -1465,6 +1477,14 @@ func (w *Window) handleEvent(ev xgb.Event) bool {
 		}
 		if !w.sendEvent(MappingNotifyEvent{}) {
 			return true
+		}
+	case xproto.KeymapNotifyEvent:
+		// The server sends KeymapNotify (not MappingNotify) when the
+		// keyboard layout changes under XKB, and also when the window
+		// gains focus. Re-read the map so dead keys/AltGr follow the
+		// current layout instead of staying frozen at startup.
+		if w.keyHandler != nil {
+			_ = w.keyHandler.RefreshMapping(w.X)
 		}
 	case xproto.SelectionRequestEvent:
 		// M32: serve selection requests on their own goroutine. The
