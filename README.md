@@ -1,81 +1,83 @@
 <p align="center">
-  <img src="assets/icon.png" width="96" height="96" alt="TerraTerminal Logo">
+  <img src="assets/icon.png" width="96" height="96" alt="Terrat logo">
 </p>
 
-<h1 align="center">TerraTerminal (<code>terrat</code>)</h1>
+<h1 align="center">Terrat</h1>
 
 <p align="center">
-  <b>A terminal emulator for Linux, written in Go.</b>
+  <b>A terminal emulator for Linux, written in pure Go. No CGO.</b>
   <br>
-  <i>v3.0.0 &bull; X11 / XWayland &bull; No CGO required</i>
+  <i>v3.0.3 &bull; X11 / XWayland</i>
 </p>
 
 <p align="center">
-  <a href="#overview">Overview</a> &bull;
-  <a href="#features">Features</a> &bull;
+  <a href="#why-another-terminal">Why</a> &bull;
+  <a href="#what-it-does">Features</a> &bull;
   <a href="#keyboard-shortcuts">Shortcuts</a> &bull;
-  <a href="#cli-usage">CLI Usage</a> &bull;
+  <a href="#usage">Usage</a> &bull;
   <a href="#configuration">Configuration</a> &bull;
-  <a href="#installation--building">Installation</a> &bull;
+  <a href="#install">Install</a> &bull;
   <a href="#benchmarks">Benchmarks</a> &bull;
   <a href="#license">License</a>
 </p>
 
 <p align="center">
-  <img src="assets/screenshot.png" alt="TerraTerminal Screenshot" width="850">
+  <img src="assets/screenshot.png" alt="Terrat screenshot" width="850">
 </p>
 
 ---
 
-## Overview
+## Why another terminal?
 
-TerraTerminal (`terrat`) runs on Linux with X11 or XWayland. It is written in Go and can be built without CGO.
+Because I wanted one I could actually read. Most terminals are either huge C/C++ projects with decades of baggage, or Electron apps that eat half a gigabyte just to show you a prompt.
 
-It has tabs, text search, themes, and suggestions from shell history. Command diagnostics catch common typos as you type. Each tab keeps its own shell session and terminal state.
+Terrat is a single Go binary. No CGO, no runtime dependencies, no 400 MB install. It starts fast, stays out of the way, and does the few things a terminal should do — well.
 
----
+It won't replace Alacritty or Kitty for everyone. It will open instantly, keep your tabs in order, and fix your typos before you hit Enter.
 
-## Features
+## What it does
 
-### Window and tabs
+### Tabs that behave
 
-The titlebar has settings, minimize, maximize, and close buttons. Drag any edge or corner to resize the window.
+Every tab is its own PTY with its own shell. The tab shows what it's running — `bash`, `nvim`, `htop` — so you can find things at a glance. Close the last tab and the window goes with it. Drag any edge to resize; the running program gets a `SIGWINCH` and reflows like it should.
 
-Each tab runs a separate pseudo-terminal (PTY). Tabs show the running process name, such as `bash`, `nvim`, or `htop`. Open, close, and switch tabs from the tab bar or with the shortcuts below. Closing the last tab exits TerraTerminal.
+### It reads what you type
 
-### Text and search
+Type `gti` and Terrat quietly offers `git`. Type `git puch` and it offers `git push`. It checks commands, subcommands, quotes, and separators (`&&`, `||`, `;`, `|`), and it will flag a command that probably wants `sudo` before you run it. File paths are left alone.
 
-Change the font size with `Ctrl+=`, `Ctrl+-`, or `Ctrl + MouseWheel`. Glyphs are cached, with system fonts used as fallbacks. Box-drawing characters are supported. Resizing updates the PTY dimensions and notifies the running program with `SIGWINCH`.
+`Alt+Enter` applies the fix. `Ctrl+Shift+D` turns the whole thing off if you'd rather make your own mistakes.
 
-Press `Ctrl+Shift+F` to search the terminal buffer. Matches are highlighted; `Enter` and `Shift+Enter` move between them.
+History and path suggestions come from your own shell history (`~/.bash_history` or `~/.zsh_history`). `Tab` or `Right Arrow` accepts one. Paths with spaces, quotes, and `~` all complete properly.
+
+### Search the scrollback
+
+`Ctrl+Shift+F` searches the whole scrollback, not just the visible screen. Matches are highlighted; `Enter` and `Shift+Enter` jump between them.
+
+### Copy, paste, and the clipboard, properly
+
+Double-click a word, triple-click a line, drag to select. `Ctrl+Shift+C` copies, `Ctrl+Shift+V` pastes, `Ctrl+Shift+A` selects everything. Middle-click pastes from the X11 primary selection, like it always has.
+
+Paste is bracketed, so pasted text can't run commands on its own. With sanitizing on, escape sequences and bidirectional override characters are stripped out of pastes — the tricks used for pastejacking and for hiding malicious text in plain sight. The zero-width non-joiner (`U+200C`) is preserved, so Persian text pastes intact.
+
+Big copies work too: copying or pasting around a megabyte goes through the X11 INCR protocol instead of silently truncating.
+
+### Text that lines up
+
+CJK characters and emoji take two cells. Combining marks and the ZWNJ take zero. Your prompt doesn't drift sideways after an emoji, and `vim` doesn't lose track of where the cursor is.
 
 ### Themes
 
-Open Preferences with `Ctrl+,` or `Ctrl+Shift+P` to choose a theme:
+`Ctrl+,` or `Ctrl+Shift+P` opens Preferences: Tokyo Night, Catppuccin Mocha, Minecraft (with blocky titlebar buttons, obviously), Tokyo Day, and Solarized Light — listed as "Solarized". Auto follows your desktop theme when it can tell what that is.
 
-- Tokyo Night, Catppuccin Mocha, and Minecraft are dark themes. Minecraft also changes the titlebar buttons to a block style.
-- Tokyo Day and Solarized Light are light themes. Solarized Light is listed as “Solarized” in Preferences.
-- Auto follows the desktop theme when detection is available.
+### Mouse and keyboard, the boring parts that have to work
 
-### Command suggestions
-
-Diagnostics check commands, subcommands, quotes, and separators (`&&`, `||`, `;`, `|`). They suggest corrections such as `gti` → `git` and `git puch` → `git push`, and can flag commands that may need elevated privileges. File paths are skipped by diagnostics.
-
-Press `Alt+Enter` to apply a correction. Toggle diagnostics with `Ctrl+Shift+D`.
-
-History suggestions come from `~/.bash_history` or `~/.zsh_history`. Path completion handles spaces, quoted paths, and `~`. Accept a history or path suggestion with `Tab` or `Right Arrow`.
-
-### Selection and paste
-
-Double-click to select a word; triple-click to select a line. `Ctrl+C` copies selected text. With no selection, it sends an interrupt. `Ctrl+V` pastes in the shell and in fullscreen editors such as `vim` and `nano`.
-
-Bracketed paste is available for programs that support it. Paste cleanup removes terminal escape sequences and bidirectional override characters when enabled. Other text, including the zero-width non-joiner (`U+200C`), is preserved.
+The scrollbar drags, and clicking the track jumps where you click. Dead keys and AltGr work on international layouts — on us-intl, `´` + `e` gives `é` and `AltGr` + `5` gives `€`. Font size is `Ctrl+=` / `Ctrl+-`, reset with `Ctrl+0`, or hold `Ctrl` and scroll. `Shift+PageUp` / `Shift+PageDown` scroll the viewport.
 
 ---
 
-## Keyboard Shortcuts
+## Keyboard shortcuts
 
-### Navigation & Tabs
+### Navigation & tabs
 | Shortcut | Action |
 | :--- | :--- |
 | `Ctrl + Shift + T` | Open new tab |
@@ -84,7 +86,7 @@ Bracketed paste is available for programs that support it. Paste cleanup removes
 | `Ctrl + Shift + Tab` / `Ctrl + PageUp` | Switch to previous tab |
 | `Alt + 1` .. `Alt + 9` | Jump directly to tabs 1 through 9 |
 
-### Clipboard & Selection
+### Clipboard & selection
 | Shortcut | Action |
 | :--- | :--- |
 | `Ctrl + Shift + C` *(or `Ctrl + C` with selection)* | Copy selected text to clipboard |
@@ -92,7 +94,7 @@ Bracketed paste is available for programs that support it. Paste cleanup removes
 | `Ctrl + Shift + A` | Select entire terminal buffer |
 | `Middle Click` | Paste from X11 `PRIMARY` selection |
 
-### Diagnostics & Search
+### Diagnostics & search
 | Shortcut | Action |
 | :--- | :--- |
 | `Alt + Enter` | Apply a command suggestion |
@@ -103,7 +105,7 @@ Bracketed paste is available for programs that support it. Paste cleanup removes
 | `Esc` | Close search bar or preferences modal |
 | `Ctrl + Left Click` | Open hovered URL in default browser |
 
-### View & Font Zoom
+### View & font zoom
 | Shortcut | Action |
 | :--- | :--- |
 | `Ctrl + =` / `Ctrl + +` | Increase font size by 1pt |
@@ -115,7 +117,7 @@ Bracketed paste is available for programs that support it. Paste cleanup removes
 
 ---
 
-## CLI Usage
+## Usage
 
 ```bash
 terrat [flags] [-e command [args...]]
@@ -164,38 +166,15 @@ Default settings:
 
 ---
 
-## Benchmarks
+## Install
 
-Results from five runs on Linux/amd64, using Go 1.22.6 and an Intel Core i5-8500 @ 3.00 GHz. Each row shows the median time per operation and its allocations.
+### Packages
 
-| Operation | Result | Allocations |
-| :--- | ---: | ---: |
-| Write 128 plain terminal lines | 95.3 µs | 0 B/op, 0 allocs/op |
-| Write 128 ANSI-colored terminal lines | 119.4 µs | 2,048 B/op, 512 allocs/op |
-| Write 128 alternate-screen lines | 89.0 µs | 0 B/op, 0 allocs/op |
-| Render a 1024 × 640 frame | 973 µs | 32 B/op, 3 allocs/op |
-| Render a 1024 × 640 frame with search matches | 2.06 ms | 32 B/op, 3 allocs/op |
-| Fill a 1024 × 640 canvas | 70.8 µs | 0 B/op, 0 allocs/op |
-| Create and close the font engine | 1.96 ms | 677,434 B/op, 1,199 allocs/op |
-| Add an entry to shell history | 42.4 ns | 0 B/op, 0 allocs/op |
+Grab the latest release — `.deb`, `.rpm`, `.pkg.tar.zst`, and `.tar.gz` for amd64 and arm64, plus plain binaries:
 
-The write benchmarks send 128 lines after warming up the terminal. The render benchmarks measure drawing to an in-memory CPU canvas; X11 presentation and window composition are excluded. These measurements do not cover shell startup, whole-app latency, or resident memory use.
+https://github.com/Kouroxsh/Terrat/releases/latest
 
-To run the benchmarks:
-
-```bash
-go test ./internal/terminal ./internal/render ./internal/autosuggest -run '^$' -bench . -benchmem -benchtime=500ms -count=5
-```
-
----
-
-## Installation & Building
-
-### Prerequisites
-- **Linux:** X11 server or Wayland via XWayland.
-- **Go 1.22.6+** (only required if compiling from source).
-
-### Building from Source
+### From source
 
 ```bash
 # Clone the repository
@@ -212,9 +191,9 @@ make install
 make package
 ```
 
-Packaging requires `nfpm`. If it is missing, the script tries to install it with `go install`.
+You need Go 1.23 or newer, and X11 or Wayland with XWayland. `make package` needs `nfpm` installed separately.
 
-### Running Tests & Static Analysis
+### Tests & static analysis
 
 ```bash
 # Run unit and race detection test suite
@@ -223,6 +202,39 @@ go test -race -count=1 ./...
 # Run static analysis
 go vet ./...
 ```
+
+---
+
+## Benchmarks
+
+Median of five runs · AMD EPYC 9D25 (cloud VM) · Linux/amd64 · Go 1.23.0.
+
+| Operation | Result | Allocations |
+| :--- | ---: | ---: |
+| Write 128 plain terminal lines | 150.5 µs | 0 B/op |
+| Write 128 ANSI-colored terminal lines | 183.2 µs | 2 KB/op |
+| Write 128 alternate-screen lines | 146.6 µs | 0 B/op |
+| Render a 1024 × 640 frame | 989.9 µs | 32 B/op |
+| Render a 1024 × 640 frame with search matches | 2.21 ms | 32 B/op |
+| Fill a 1024 × 640 canvas | 57.3 µs | 0 B/op |
+| Create and close the font engine | 1.53 ms | 703 KB/op |
+| Add an entry to shell history | 0.1 µs | 0 B/op |
+
+The write benchmarks send 128 lines after warming up the terminal. The render benchmarks measure drawing to an in-memory CPU canvas; X11 presentation and window composition are excluded. These measurements do not cover shell startup, whole-app latency, or resident memory use.
+
+To run the benchmarks:
+
+```bash
+go test ./internal/terminal ./internal/render ./internal/autosuggest -run '^$' -bench . -benchmem -benchtime=500ms -count=5
+```
+
+---
+
+## What it doesn't do (yet)
+
+- No Arabic-script shaping: Persian and Arabic text renders as replacement glyphs for now. Widths are correct (ZWNJ is zero-width), shaping is a separate job.
+- No native Wayland backend — it runs through XWayland.
+- No split panes yet. Tabs only.
 
 ---
 
