@@ -46,7 +46,7 @@ export const InstallSection: React.FC = () => {
         </div>
 
         {/* Installation Boxes */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12 items-start">
           {/* Method 1: Go Install */}
           <div className="p-6 bg-[#16161e] border border-[#292e42] rounded-[2px] flex flex-col justify-between">
             <div>
@@ -60,7 +60,9 @@ export const InstallSection: React.FC = () => {
                 Installs binary directly to your <code>$GOPATH/bin</code>:
               </p>
               <div className="p-3 bg-[#13141c] border border-[#292e42] rounded-[2px] font-mono text-xs flex items-center justify-between gap-3">
-                <code className="text-[#c0caf5] select-all break-all">go install github.com/Kouroxsh/Terrat/cmd/terrat@latest</code>
+                <div className="overflow-x-auto min-w-0 flex-1">
+                  <code className="text-[#c0caf5] select-all whitespace-nowrap">go install github.com/Kouroxsh/Terrat/cmd/terrat@latest</code>
+                </div>
                 <button
                   onClick={() => copyToClipboard('go install github.com/Kouroxsh/Terrat/cmd/terrat@latest', 'go')}
                   className="text-[#565f89] hover:text-[#c0caf5] transition-colors shrink-0"
@@ -88,10 +90,12 @@ export const InstallSection: React.FC = () => {
                 Builds the program and installs a desktop launcher and icon:
               </p>
               <div className="p-3 bg-[#13141c] border border-[#292e42] rounded-[2px] font-mono text-xs flex items-center justify-between gap-3">
-                <pre className="text-[#c0caf5] select-all leading-relaxed whitespace-pre font-mono text-[11px]">
+                <div className="overflow-x-auto min-w-0 flex-1">
+                  <pre className="text-[#c0caf5] select-all leading-relaxed whitespace-pre font-mono text-[11px]">
 git clone https://github.com/Kouroxsh/Terrat.git
 cd Terrat &amp;&amp; make install
-                </pre>
+                  </pre>
+                </div>
                 <button
                   onClick={() =>
                     copyToClipboard(
@@ -126,19 +130,19 @@ cd Terrat &amp;&amp; make install
               <div className="flex flex-col gap-2 font-mono text-xs">
                 <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.4" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
                   <span>.deb — Debian / Ubuntu</span>
-                  <span className="text-[#565f89]">amd64 · arm64</span>
+                  <span className="text-[#565f89] shrink-0 whitespace-nowrap">amd64 · arm64</span>
                 </a>
                 <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.4" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
                   <span>.rpm — Fedora / RHEL / openSUSE</span>
-                  <span className="text-[#565f89]">amd64 · arm64</span>
+                  <span className="text-[#565f89] shrink-0 whitespace-nowrap">amd64 · arm64</span>
                 </a>
                 <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.4" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
                   <span>.pkg.tar.zst — Arch Linux</span>
-                  <span className="text-[#565f89]">amd64 · arm64</span>
+                  <span className="text-[#565f89] shrink-0 whitespace-nowrap">amd64 · arm64</span>
                 </a>
                 <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.4" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
                   <span>.tar.gz — Portable Linux</span>
-                  <span className="text-[#565f89]">amd64 · arm64</span>
+                  <span className="text-[#565f89] shrink-0 whitespace-nowrap">amd64 · arm64</span>
                 </a>
               </div>
             </div>
@@ -201,11 +205,11 @@ cd Terrat &amp;&amp; make install
             <span>Default Keyboard Shortcuts</span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 font-mono text-xs">
+          <div className="flex flex-wrap justify-center gap-3 font-mono text-xs">
             {keybindings.map((item, idx) => (
               <div
                 key={idx}
-                className="p-2.5 bg-[#13141c] border border-[#292e42] rounded-[2px] flex items-center justify-between gap-2"
+                className="w-full md:w-[calc(50%-0.375rem)] lg:w-[calc(33.333%-0.5rem)] p-2.5 bg-[#13141c] border border-[#292e42] rounded-[2px] flex items-center justify-between gap-2"
               >
                 <span className="text-[#e0af68] font-medium">{item.key}</span>
                 <span className="text-[#565f89] text-[11px] text-right">{item.desc}</span>

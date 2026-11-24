@@ -94,13 +94,13 @@ export const Features: React.FC = () => {
         </div>
 
         {/* Feature Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="flex flex-wrap justify-center gap-6">
           {featureList.map((f, i) => {
             const Icon = f.icon;
             return (
               <div
                 key={i}
-                className="p-6 bg-[#16161e] border border-[#292e42] hover:border-[#3b4261] rounded-[2px] transition-colors flex flex-col justify-between"
+                className="w-full md:w-[calc(50%-0.75rem)] lg:w-[calc(33.333%-1rem)] p-6 bg-[#16161e] border border-[#292e42] hover:border-[#3b4261] rounded-[2px] transition-colors flex flex-col justify-between"
               >
                 <div>
                   <div className="flex items-center justify-between mb-4">

@@ -18,9 +18,9 @@ export const HeroTerminal: React.FC = () => (
           </div>
         </div>
         <div className="lg:col-span-4 flex flex-col gap-3 font-mono text-xs">
-          <div className="p-4 bg-[#16161e] border border-[#292e42]">
+          <div className="p-4 bg-[#16161e] border border-[#292e42] overflow-x-auto">
             <div className="text-[#565f89] mb-2 uppercase tracking-wider">Install with Go</div>
-            <code className="text-[#c0caf5] break-all">go install github.com/Kouroxsh/Terrat/cmd/terrat@latest</code>
+            <code className="text-[#c0caf5] whitespace-nowrap">go install github.com/Kouroxsh/Terrat/cmd/terrat@latest</code>
           </div>
           <div className="flex gap-3">
             <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.4" className="flex-1 text-center py-2.5 bg-[#7aa2f7] hover:bg-[#89b4fa] text-[#13141c] font-semibold transition-colors">
