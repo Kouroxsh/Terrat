@@ -441,7 +441,7 @@ func (t *Terminal) rowTextLocked(y int) (string, []int) {
 		}
 		runes = append(runes, r)
 		colMap = append(colMap, x)
-		for _, extra := range cell.Extra {
+		for _, extra := range cell.ExtraRunes() {
 			runes = append(runes, extra)
 			colMap = append(colMap, x)
 		}
@@ -500,7 +500,7 @@ func rowTextOf(row []Cell) (string, []int) {
 		}
 		runes = append(runes, r)
 		colMap = append(colMap, x)
-		for _, extra := range cell.Extra {
+		for _, extra := range cell.ExtraRunes() {
 			runes = append(runes, extra)
 			colMap = append(colMap, x)
 		}
@@ -678,8 +678,8 @@ func (t *Terminal) SetTheme(theme *Theme) {
 		return c
 	}
 	remapCell := func(cell *Cell) {
-		cell.FG = remap(cell.FG, cell.FGKind, cell.FGIdx)
-		cell.BG = remap(cell.BG, cell.BGKind, cell.BGIdx)
+		cell.FG = remap(cell.FG, cell.FGKind, int(cell.FGIdx))
+		cell.BG = remap(cell.BG, cell.BGKind, int(cell.BGIdx))
 	}
 
 	for r := range t.lines {
@@ -1285,7 +1285,10 @@ func (t *Terminal) putChar(r rune) {
 	// Zero-width runes (combining marks, ZWNJ/ZWJ, variation selectors)
 	// attach to the previous cell's grapheme and never advance the cursor;
 	// anything else zero-width (controls) is dropped.
-	if RuneWidth(r) == 0 {
+	// Width is computed once here and reused below: RuneWidth used to be
+	// called twice per rune.
+	w := RuneWidth(r)
+	if w == 0 {
 		if IsZeroWidthAttachable(r) {
 			t.attachZeroWidth(r)
 		}
@@ -1302,7 +1305,6 @@ func (t *Terminal) putChar(r rune) {
 		t.wrapNext = false
 	}
 
-	w := RuneWidth(r)
 	grid := t.activeGrid()
 
 	// A wide rune that does not fit in the remaining columns wraps to the
@@ -1320,16 +1322,20 @@ func (t *Terminal) putChar(r rune) {
 
 	if t.cursorY >= 0 && t.cursorY < t.rows && t.cursorX >= 0 && t.cursorX < t.cols {
 		// Overwriting half of a wide pair must clear the other half, or
-		// the grid would keep a dangling lead/continuation cell.
-		t.clearWidePairAt(grid, t.cursorY, t.cursorX)
+		// the grid would keep a dangling lead/continuation cell. Only
+		// wide leads and continuations need the check: normal cells are
+		// the overwhelming case, and the call costs ~7% of write time.
+		if c := grid[t.cursorY][t.cursorX]; c.Continuation || c.Wide {
+			t.clearWidePairAt(grid, t.cursorY, t.cursorX)
+		}
 		grid[t.cursorY][t.cursorX] = Cell{
 			Char:      r,
 			FG:        t.currFG,
 			BG:        t.currBG,
 			FGKind:    t.currFGKind,
 			BGKind:    t.currBGKind,
-			FGIdx:     t.currFGIdx,
-			BGIdx:     t.currBGIdx,
+			FGIdx:     int16(t.currFGIdx),
+			BGIdx:     int16(t.currBGIdx),
 			Bold:      t.currBold,
 			Underline: t.currUnderline,
 			Inverse:   t.currInverse,
@@ -1342,8 +1348,8 @@ func (t *Terminal) putChar(r rune) {
 				BG:           t.currBG,
 				FGKind:       t.currFGKind,
 				BGKind:       t.currBGKind,
-				FGIdx:        t.currFGIdx,
-				BGIdx:        t.currBGIdx,
+				FGIdx:        int16(t.currFGIdx),
+				BGIdx:        int16(t.currBGIdx),
 			}
 		}
 	}
@@ -1378,10 +1384,11 @@ func (t *Terminal) attachZeroWidth(r rune) {
 	}
 	// Copy on append: cells are copied by value on row shifts, so the
 	// backing array may be shared with another cell.
-	extra := make([]rune, len(prev.Extra)+1)
-	copy(extra, prev.Extra)
-	extra[len(prev.Extra)] = r
-	prev.Extra = extra
+	extra := prev.ExtraRunes()
+	attached := make([]rune, len(extra)+1)
+	copy(attached, extra)
+	attached[len(extra)] = r
+	prev.Extra = &attached
 }
 
 // clearWidePairAt clears both halves of a wide pair touching cell (y, x):

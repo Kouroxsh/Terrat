@@ -49,8 +49,8 @@ func TestPutCharZWNJDoesNotAdvance(t *testing.T) {
 	}
 	// The ZWNJ is stored on the preceding cell's grapheme.
 	cell := term.GetCell(1, 0)
-	if len(cell.Extra) != 1 || cell.Extra[0] != '\u200c' {
-		t.Fatalf("cell 1 Extra = %U, want [U+200C]", cell.Extra)
+	if len(cell.ExtraRunes()) != 1 || cell.ExtraRunes()[0] != '\u200c' {
+		t.Fatalf("cell 1 Extra = %U, want [U+200C]", cell.ExtraRunes())
 	}
 }
 

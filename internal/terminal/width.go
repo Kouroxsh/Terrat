@@ -17,6 +17,13 @@ import "unicode"
 // This is a hand-rolled table (no new module dependency): the terminal must
 // keep building offline with GOTOOLCHAIN=local.
 func RuneWidth(r rune) int {
+	// Fast path: printable ASCII is always exactly one cell wide.
+	// This skips the zero-width table checks and the wide-range binary
+	// search below, which cost ~45% of terminal write time when run for
+	// every rune (see BenchmarkTerminalOutput).
+	if r >= 0x20 && r < 0x7f {
+		return 1
+	}
 	if r < 0x20 || (r >= 0x7f && r < 0xa0) {
 		return 0
 	}
@@ -35,6 +42,11 @@ func RuneWidth(r rune) int {
 // (e.g. the Persian ZWNJ in "می‌کنم"). Control characters are zero-width
 // but not attachable: they are dropped.
 func IsZeroWidthAttachable(r rune) bool {
+	// Fast path: no ASCII rune is a combining mark, joiner or
+	// variation selector.
+	if r < 0x80 {
+		return false
+	}
 	if r < 0x20 || (r >= 0x7f && r < 0xa0) {
 		return false
 	}
