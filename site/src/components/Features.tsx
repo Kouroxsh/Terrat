@@ -1,6 +1,5 @@
 import React from 'react';
 import { Layers, ZoomIn, Search, Link2, Eye, MousePointer, TextCursor, AlertCircle } from 'lucide-react';
-import { SectionHeader } from './SectionHeader';
 
 export const Features: React.FC = () => {
   const featureList = [
@@ -79,33 +78,49 @@ export const Features: React.FC = () => {
   ];
 
   return (
-    <section id="features" className="py-20 sm:py-24 hairline-b bg-tokyo-bg">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6">
-        <SectionHeader
-          eyebrow="In the terminal"
-          title="Tabs, search, and command suggestions."
-          lede="Tabs, search, themes, and suggestions for Bash and Zsh."
-        />
+    <section id="features" className="py-20 hairline-b bg-[#1a1b26]">
+      <div className="max-w-7xl mx-auto px-6">
+        {/* Section Header */}
+        <div className="mb-14">
+          <div className="font-mono text-xs text-[#7aa2f7] uppercase tracking-wider mb-2">
+            IN THE TERMINAL
+          </div>
+          <h2 className="text-3xl sm:text-5xl font-bold tracking-tight text-white mb-3">
+            Tabs, search, and command suggestions.
+          </h2>
+          <p className="text-sm sm:text-base text-[#a9b1d6] max-w-2xl">
+            Tabs, search, themes, and suggestions for Bash and Zsh.
+          </p>
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {featureList.map((f) => {
+        {/* Feature Grid */}
+        <div className="flex flex-wrap justify-center gap-6">
+          {featureList.map((f, i) => {
             const Icon = f.icon;
             return (
-              <article
-                key={f.num}
-                className="anim p-6 bg-tokyo-surface border border-tokyo-border rounded-sm hover:border-[#3b4261] hover:-translate-y-0.5 flex flex-col"
+              <div
+                key={i}
+                className="w-full md:w-[calc(50%-0.75rem)] lg:w-[calc(33.333%-1rem)] p-6 bg-[#16161e] border border-[#292e42] hover:border-[#3b4261] rounded-[2px] transition-colors flex flex-col justify-between"
               >
-                <div className="flex items-center justify-between mb-4">
-                  <span className="font-mono text-xs text-[#a9b1d6]">{f.num}</span>
-                  <Icon className="w-5 h-5" style={{ color: f.color }} aria-hidden="true" />
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="font-mono text-xs text-[#565f89]">
+                      {f.num}
+                    </span>
+                    <Icon className="w-5 h-5" style={{ color: f.color }} />
+                  </div>
+
+                  <h3 className="text-lg font-bold text-white mb-1">{f.title}</h3>
+                  <div className="font-mono text-[11px] text-[#7aa2f7] mb-3">{f.subtitle}</div>
+                  <p className="text-xs text-[#a9b1d6] leading-relaxed mb-6">
+                    {f.desc}
+                  </p>
                 </div>
-                <h3 className="text-lg font-bold text-white">{f.title}</h3>
-                <div className="font-mono text-xs text-tokyo-accent mt-1 mb-3">{f.subtitle}</div>
-                <p className="text-sm text-[#a9b1d6] leading-relaxed mb-6 flex-1">{f.desc}</p>
-                <div className="pt-3 border-t border-tokyo-border font-mono text-xs text-[#a9b1d6]">
-                  Shortcut: <span className="text-tokyo-fg">{f.shortcut}</span>
+
+                <div className="pt-3 border-t border-[#292e42] font-mono text-[11px] text-[#565f89]">
+                  Shortcut: <span className="text-[#c0caf5]">{f.shortcut}</span>
                 </div>
-              </article>
+              </div>
             );
           })}
         </div>

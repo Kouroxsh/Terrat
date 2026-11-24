@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Check, Sun, Moon, Monitor } from 'lucide-react';
-import { SectionHeader } from './SectionHeader';
 
 interface ThemeInfo {
   id: string;
@@ -82,15 +81,20 @@ export const ThemePreview: React.FC = () => {
   const [selectedTheme, setSelectedTheme] = useState<ThemeInfo>(themes[0]);
 
   return (
-    <section id="themes" className="py-20 sm:py-24 hairline-b bg-tokyo-bg">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6">
+    <section id="themes" className="py-20 hairline-b bg-[#13141c]">
+      <div className="max-w-7xl mx-auto px-6">
+        {/* Section Header */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
-          <SectionHeader
-            eyebrow="Color themes"
-            title="Built-in color palettes"
-          />
-          <p className="font-mono text-xs text-[#a9b1d6] max-w-md md:text-right md:pb-1">
-            Change the theme with <code className="text-tokyo-fg">Ctrl+,</code> or set it in <code className="text-tokyo-fg">config.json</code>.
+          <div>
+            <div className="font-mono text-xs text-[#7aa2f7] uppercase tracking-wider mb-2">
+              COLOR THEMES
+            </div>
+            <h2 className="text-3xl sm:text-5xl font-bold tracking-tight text-white">
+              Built-in color palettes
+            </h2>
+          </div>
+          <p className="font-mono text-xs text-[#565f89] max-w-md">
+            Change the theme with <code>Ctrl+,</code> or set it in <code>config.json</code>.
           </p>
         </div>
 
@@ -98,43 +102,42 @@ export const ThemePreview: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* Theme List */}
           <div className="lg:col-span-5 flex flex-col gap-3 font-mono text-xs">
-            <div className="text-[#a9b1d6] uppercase tracking-wider mb-1">
-              Themes
+            <div className="text-[#565f89] uppercase tracking-wider mb-1 text-[11px]">
+              THEMES
             </div>
 
             {themes.map((th) => (
               <button
                 key={th.id}
                 onClick={() => setSelectedTheme(th)}
-                aria-pressed={selectedTheme.id === th.id}
-                className={`anim p-3.5 rounded-sm border text-left flex items-center justify-between ${
+                className={`p-3.5 rounded-[2px] border text-left transition-colors flex items-center justify-between ${
                   selectedTheme.id === th.id
-                    ? 'bg-tokyo-bg border-tokyo-accent'
-                    : 'bg-tokyo-surface border-tokyo-border hover:border-[#565f89]'
+                    ? 'bg-[#1a1b26] border-[#7aa2f7]'
+                    : 'bg-[#16161e] border-[#292e42] hover:border-[#565f89]'
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-4 h-4 rounded-full border border-black/20 shrink-0" style={{ backgroundColor: th.bg }} aria-hidden="true" />
+                  <div className="w-4 h-4 rounded-full border border-black/20" style={{ backgroundColor: th.bg }} />
                   <div>
                     <div className="font-bold text-white text-sm">{th.name}</div>
-                    {th.tag && <div className="text-xs text-[#a9b1d6]">{th.tag}</div>}
+                    {th.tag && <div className="text-[11px] text-[#565f89]">{th.tag}</div>}
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
                   {th.mode === 'dark' ? (
-                    <Moon className="w-3.5 h-3.5 text-tokyo-accent" aria-hidden="true" />
+                    <Moon className="w-3.5 h-3.5 text-[#7aa2f7]" />
                   ) : (
-                    <Sun className="w-3.5 h-3.5 text-tokyo-yellow" aria-hidden="true" />
+                    <Sun className="w-3.5 h-3.5 text-[#e0af68]" />
                   )}
-                  {selectedTheme.id === th.id && <Check className="w-4 h-4 text-tokyo-green" aria-hidden="true" />}
+                  {selectedTheme.id === th.id && <Check className="w-4 h-4 text-[#9ece6a]" />}
                 </div>
               </button>
             ))}
 
             {/* FreeDesktop portal note */}
-            <div className="p-3.5 bg-tokyo-surface border border-tokyo-border rounded-sm flex items-start gap-3 text-xs text-[#a9b1d6]">
-              <Monitor className="w-4 h-4 text-tokyo-accent shrink-0 mt-0.5" aria-hidden="true" />
+            <div className="p-3.5 bg-[#16161e] border border-[#292e42] rounded-[2px] flex items-start gap-3 text-xs text-[#a9b1d6]">
+              <Monitor className="w-4 h-4 text-[#7aa2f7] shrink-0 mt-0.5" />
               <div>
                 <span className="font-bold text-white">Automatic theme:</span> Follows the desktop light or dark setting when it can be detected.
               </div>
@@ -144,17 +147,16 @@ export const ThemePreview: React.FC = () => {
           {/* Live Preview Window */}
           <div className="lg:col-span-7">
             <div
-              key={selectedTheme.id}
-              className={`fade-in rounded-sm overflow-hidden border shadow-2xl ${
+              className={`rounded-[4px] overflow-hidden border shadow-2xl transition-colors duration-150 ${
                 selectedTheme.id === 'minecraft'
                   ? 'border-2 border-black shadow-[inset_2px_2px_0_#4a4e4a,inset_-2px_-2px_0_#141614]'
-                  : 'border-tokyo-border'
+                  : 'border-[#292e42]'
               }`}
               style={{ backgroundColor: selectedTheme.bg }}
             >
               {/* Header */}
               <div
-                className="h-8 flex items-center justify-between px-3 border-b"
+                className="h-8 flex items-center justify-between px-3 border-b transition-colors duration-150"
                 style={{
                   backgroundColor: selectedTheme.header,
                   borderColor: selectedTheme.mode === 'dark' ? '#292e42' : '#d0d7de',
@@ -199,7 +201,7 @@ export const ThemePreview: React.FC = () => {
                 >
                   terrat &mdash; {selectedTheme.name}
                 </div>
-                <div className="font-mono text-xs opacity-50" style={{ color: selectedTheme.fg }}>
+                <div className="font-mono text-[11px] opacity-50" style={{ color: selectedTheme.fg }}>
                   80x24
                 </div>
               </div>
@@ -222,7 +224,7 @@ export const ThemePreview: React.FC = () => {
                   )}
                 </div>
 
-                <div className="pl-2 space-y-0.5 text-xs">
+                <div className="pl-2 space-y-0.5 text-[11px]">
                   <div style={{ color: selectedTheme.colors ? selectedTheme.colors[2] : '#9ece6a' }}>&nbsp;M internal/render/font.go</div>
                   <div style={{ color: selectedTheme.colors ? selectedTheme.colors[2] : '#9ece6a' }}>&nbsp;M internal/terminal/terminal.go</div>
                   <div style={{ color: selectedTheme.colors ? selectedTheme.colors[2] : '#9ece6a' }}>&nbsp;M internal/app/modals.go</div>
@@ -236,7 +238,7 @@ export const ThemePreview: React.FC = () => {
                   <span>go test ./internal/terminal</span>
                 </div>
 
-                <div className="pl-2 space-y-0.5 text-xs">
+                <div className="pl-2 space-y-0.5 text-[11px]">
                   <div>=== RUN   TestTabCreation</div>
                   <div style={{ color: selectedTheme.colors ? selectedTheme.colors[2] : '#9ece6a' }}>--- PASS: TestTabCreation (0.00s)</div>
                   <div>=== RUN   TestPTYAllocation</div>
@@ -252,7 +254,7 @@ export const ThemePreview: React.FC = () => {
                   {(selectedTheme.colors || ['#f7768e', '#e0af68', '#9ece6a', '#7dcfff', '#7aa2f7', '#bb9af7']).map((hex) => (
                     <div
                       key={hex}
-                      className="w-6 h-3.5 rounded-sm"
+                      className="w-6 h-3.5 rounded-[1px]"
                       style={{ backgroundColor: hex }}
                       title={hex}
                     />
