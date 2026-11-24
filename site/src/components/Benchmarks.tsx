@@ -34,7 +34,7 @@ export const Benchmarks: React.FC = () => (
           These Go microbenchmarks show the cost of selected terminal and rendering operations. They are useful for tracking changes, but do not represent whole-app startup or memory use.
         </p>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 border border-[#292e42] divide-y sm:divide-y-0 sm:divide-x divide-[#292e42] bg-[#16161e]">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 border border-[#292e42] divide-y sm:divide-y-0 sm:divide-x divide-[#292e42] bg-[#16161e]">
         {measurements.map(({ label, detail, value, allocation }) => (
           <article key={label} className="p-6 sm:p-7">
             <p className="text-sm font-semibold text-white">{label}</p>
@@ -45,7 +45,7 @@ export const Benchmarks: React.FC = () => (
         ))}
       </div>
       <p className="mt-4 text-xs text-[#565f89] leading-relaxed">
-        Median of five runs · AMD EPYC 9D25 (cloud VM) · Linux/amd64 · Go 1.23.0. Rendering measures the CPU canvas only; it excludes native window presentation and shell startup. Reproduce with <code className="text-[#a9b1d6]">go test ./internal/terminal ./internal/render ./internal/autosuggest -run '^$' -bench . -benchmem -benchtime=500ms -count=5</code>.
+        Median of five runs · Nov 2026 · AMD EPYC 9D25 (cloud VM) · Linux/amd64 · Go 1.23.0. Rendering measures the CPU canvas only; it excludes native window presentation and shell startup. Reproduce with <code className="text-[#a9b1d6]">go test ./internal/terminal ./internal/render ./internal/autosuggest -run '^$' -bench . -benchmem -benchtime=500ms -count=5</code>.
       </p>
 
       <div className="max-w-2xl mt-16 mb-8">
