@@ -91,10 +91,8 @@ export const InstallSection: React.FC = () => {
               </p>
               <div className="p-3 bg-[#13141c] border border-[#292e42] rounded-[2px] font-mono text-xs flex items-center justify-between gap-3">
                 <div className="overflow-x-auto min-w-0 flex-1">
-                  <pre className="text-[#c0caf5] select-all leading-relaxed whitespace-pre font-mono text-[11px]">
-git clone https://github.com/Kouroxsh/Terrat.git
-cd Terrat &amp;&amp; make install
-                  </pre>
+                  <pre className="text-[#c0caf5] select-all leading-relaxed whitespace-pre font-mono text-[11px]">{`git clone https://github.com/Kouroxsh/Terrat.git
+cd Terrat && make install`}</pre>
                 </div>
                 <button
                   onClick={() =>
