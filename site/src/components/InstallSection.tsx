@@ -38,7 +38,7 @@ export const InstallSection: React.FC = () => {
             INSTALLATION &amp; CONFIGURATION
           </div>
           <h2 className="text-3xl sm:text-5xl font-bold tracking-tight text-white mb-3">
-            Install TerraTerminal.
+            Install Terrat.
           </h2>
           <p className="text-sm sm:text-base text-[#a9b1d6] max-w-2xl">
             On Linux, Terrat needs an X11 server or XWayland. It builds without CGO.
@@ -121,29 +121,29 @@ cd Terrat &amp;&amp; make install
                 <Download className="w-4 h-4 text-[#e0af68]" />
               </div>
               <p className="text-xs text-[#a9b1d6] mb-4">
-                v3.0.0 packages built with nfpm — no build needed:
+                v3.0.1 packages built with nfpm — no build needed:
               </p>
               <div className="flex flex-col gap-2 font-mono text-xs">
-                <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.0" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
+                <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.1" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
                   <span>.deb — Debian / Ubuntu</span>
                   <span className="text-[#565f89]">amd64 · arm64</span>
                 </a>
-                <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.0" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
+                <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.1" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
                   <span>.rpm — Fedora / RHEL / openSUSE</span>
                   <span className="text-[#565f89]">amd64 · arm64</span>
                 </a>
-                <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.0" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
+                <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.1" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
                   <span>.pkg.tar.zst — Arch Linux</span>
                   <span className="text-[#565f89]">amd64 · arm64</span>
                 </a>
-                <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.0" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
+                <a href="https://github.com/Kouroxsh/Terrat/releases/tag/v3.0.1" target="_blank" rel="noopener noreferrer" className="p-3 bg-[#13141c] border border-[#292e42] hover:border-[#7aa2f7] text-[#c0caf5] transition-colors flex items-center justify-between gap-3">
                   <span>.tar.gz — Portable Linux</span>
                   <span className="text-[#565f89]">amd64 · arm64</span>
                 </a>
               </div>
             </div>
             <div className="mt-4 text-[11px] font-mono text-[#565f89]">
-              v3.0.0 stable release — see the release page for packages.
+              v3.0.1 stable release — see the release page for packages.
             </div>
           </div>
 
