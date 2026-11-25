@@ -26,7 +26,7 @@ func TestWriteUTF8SplitAtEveryByte(t *testing.T) {
 	for _, b := range []byte("世界") {
 		term.Write([]byte{b})
 	}
-	// A wide rune occupies two cells: lead + continuation.
+
 	if got := term.GetCell(0, 0); got.Char != '世' || !got.Wide {
 		t.Fatalf("column 0: got %+v, want lead cell of U+4E16", got)
 	}

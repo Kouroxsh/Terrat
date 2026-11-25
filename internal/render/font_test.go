@@ -47,7 +47,6 @@ func TestBoxDrawing(t *testing.T) {
 	}
 	defer fe.Close()
 
-	// 1. Box drawing characters
 	boxRunes := []rune{0x2500, 0x2502, 0x250C, 0x2510, 0x2514, 0x2518, 0x253C, 0x2550, 0x2551}
 	for _, r := range boxRunes {
 		mask := fe.GetGlyph(r, false)
@@ -65,7 +64,6 @@ func TestBoxDrawing(t *testing.T) {
 		}
 	}
 
-	// 2. Block element
 	fullBlock := fe.GetGlyph(0x2588, false)
 	for i, a := range fullBlock.Alpha {
 		if a != 0xff {

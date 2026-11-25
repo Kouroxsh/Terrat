@@ -8,11 +8,10 @@ import (
 type SelectionMode int
 
 const (
-	SelectionModeNone SelectionMode = iota
-	SelectionModeNormal
-	SelectionModeWord
-	SelectionModeLine
-	SelectionModeAll
+	SelectionModeNormal SelectionMode = 1
+	SelectionModeWord   SelectionMode = 2
+	SelectionModeLine   SelectionMode = 3
+	SelectionModeAll    SelectionMode = 4
 )
 
 type Selection struct {
@@ -195,8 +194,6 @@ func (t *Terminal) SelectLine(y int) {
 	}
 }
 
-// wordCharAt returns the rune occupying column x, resolving a
-// continuation cell to its wide lead cell's rune.
 func (t *Terminal) wordCharAt(x, y int) rune {
 	cell := t.GetCellLocked(x, y)
 	if cell.Continuation && x > 0 {
@@ -210,7 +207,6 @@ func (t *Terminal) findWordBounds(x, y int) (int, int) {
 		return x, x
 	}
 
-	// A double-click on the second half of a wide rune selects the whole rune.
 	if t.GetCellLocked(x, y).Continuation && x > 0 {
 		x--
 	}
@@ -247,7 +243,6 @@ func (t *Terminal) findWordBounds(x, y int) (int, int) {
 		}
 	}
 
-	// Never split a wide rune at the selection edge.
 	if t.GetCellLocked(left, y).Continuation && left > 0 {
 		left--
 	}
@@ -258,9 +253,6 @@ func (t *Terminal) findWordBounds(x, y int) (int, int) {
 	return left, right
 }
 
-// rowCellsToRunes converts grid cells in [start, end] to text, skipping
-// continuation cells of wide runes and appending each cell's Extra
-// (zero-width) runes, so the text round-trips on copy/paste.
 func rowCellsToRunes(row []Cell, start, end int) []rune {
 	var out []rune
 	if start < 0 {
@@ -284,9 +276,6 @@ func rowCellsToRunes(row []Cell, start, end int) []rune {
 	return out
 }
 
-// wrappedAtViewport reports whether the row visible at viewport row y
-// continues the previous logical line (same scrollback/grid mapping as
-// GetCellLocked). Used to join wrapped rows on copy (L13).
 func (t *Terminal) wrappedAtViewport(y int) bool {
 	if t.isAlt {
 		if y >= 0 && y < len(t.altWrapped) {
@@ -311,9 +300,6 @@ func (t *Terminal) wrappedAtViewport(y int) bool {
 	return false
 }
 
-// logicalLineStrings joins physical rows into logical lines using the
-// wrapped flags, trimming trailing spaces only at the end of a logical
-// line — a space at a wrap point is real text, not padding (L13).
 func logicalLineStrings(rows [][]Cell, wrapped []bool) []string {
 	var lines []string
 	var cur []rune
@@ -405,9 +391,7 @@ func (t *Terminal) getAllTextLocked() string {
 	var gridLines []string
 	if lastRowWithContent != -1 {
 		gridLines = logicalLineStrings(grid[:lastRowWithContent+1], wrapped[:lastRowWithContent+1])
-		// A logical line can span the scrollback/grid boundary: when the
-		// first grid row is a wrapped continuation, it belongs to the
-		// last scrollback line, not a line of its own (L13).
+
 		if len(sbLines) > 0 && len(gridLines) > 0 && len(wrapped) > 0 && wrapped[0] {
 			sbLines[len(sbLines)-1] += gridLines[0]
 			gridLines = gridLines[1:]
@@ -488,10 +472,6 @@ func (t *Terminal) GetSelectedText() string {
 			lineRunes = append(lineRunes, cell.ExtraRunes()...)
 		}
 
-		// L13: when the next selected row continues this logical line
-		// (wrapped) and the selection covers the whole row boundary,
-		// join without a newline and without trimming the trailing
-		// spaces — they are mid-line text, not padding.
 		continues := false
 		if y < eY && colEnd == t.cols-1 && t.wrappedAtViewport(y+1) {
 			continues = true

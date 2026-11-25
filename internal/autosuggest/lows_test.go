@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-// L29: bare ~, ~/ and ~user/... completion.
 func TestTildeCompletion(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
@@ -16,28 +15,26 @@ func TestTildeCompletion(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(home, "notes.txt"), []byte("x"), 0o644)
 	t.Setenv("HOME", home)
 
-	// Bare ~ lists the home directory (quoted or not, first token or after cd).
 	for _, input := range []string{"~", "cd ~", "cd \"~"} {
 		if got := suggestPath(input, cwd); got == "" {
 			t.Fatalf("expected a completion for %q, got empty", input)
 		}
 	}
-	// ~/ lists the home directory.
+
 	if got := suggestPath("~/", cwd); got != "Documents/" {
 		t.Fatalf("expected 'Documents/' for '~/', got %q", got)
 	}
 	if got := suggestPath("cd ~/D", cwd); got != "ocuments/" {
 		t.Fatalf("expected 'ocuments/' for 'cd ~/D', got %q", got)
 	}
-	// ~user resolves to that user's home: bare ~root completes to ~root/,
-	// and ~root/.b completes inside /root (hidden files match a .-base).
+
 	if got := suggestPath("~root", cwd); got != "/" {
 		t.Fatalf("expected '/' for '~root', got %q", got)
 	}
 	if got := suggestPath("~root/.b", cwd); got != "ashrc" {
 		t.Fatalf("expected 'ashrc' for '~root/.b', got %q", got)
 	}
-	// An unknown user completes to nothing (not to the cwd's contents).
+
 	if got := suggestPath("~nosuchuserxyz/", cwd); got != "" {
 		t.Fatalf("expected empty for '~nosuchuserxyz/', got %q", got)
 	}
@@ -46,8 +43,6 @@ func TestTildeCompletion(t *testing.T) {
 	}
 }
 
-// L30: a huge history file is read from the tail only, and a line longer
-// than the old 64KB scanner cap still loads.
 func TestHistoryTailCapAndLongLines(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -71,8 +66,6 @@ func TestHistoryTailCapAndLongLines(t *testing.T) {
 		t.Fatalf("oldest command should have been cut off by the tail cap")
 	}
 
-	// A 100KB one-liner must load (the old 64KB scanner dropped it and
-	// everything after it).
 	longCmd := "echo " + strings.Repeat("x", 100*1024)
 	if err := os.WriteFile(filepath.Join(home, ".bash_history"), []byte(longCmd+"\nafter long line\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -87,8 +80,6 @@ func TestHistoryTailCapAndLongLines(t *testing.T) {
 	}
 }
 
-// L31: zsh extended history — empty entries skipped, multiline entries
-// kept whole, plain ":" commands untouched.
 func TestZshExtendedHistory(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -135,13 +126,12 @@ func TestZshExtendedHistory(t *testing.T) {
 	}
 }
 
-// L32: case-folding must not split the ghost suffix mid-rune.
 func TestFoldPrefixLen(t *testing.T) {
 	cases := []struct {
 		s, prefix string
 		want      int
 	}{
-		{"İstanbul", "i", 2}, // 'i' folds with 'İ'; suffix starts after it
+		{"İstanbul", "i", 2},
 		{"İstanbul", "İ", 2},
 		{"İstanbul", "İS", 3},
 		{"abc", "ab", 2},
@@ -154,8 +144,7 @@ func TestFoldPrefixLen(t *testing.T) {
 			t.Errorf("foldPrefixLen(%q, %q) = %d, want %d", c.s, c.prefix, got, c.want)
 		}
 	}
-	// The old byte-slice produced invalid UTF-8 here: typing "i" with
-	// "İstanbul" in history cut the two-byte İ after its first byte.
+
 	eng := &Engine{historyM: make(map[string]struct{}), maxItems: 100}
 	eng.Add("İstanbul")
 	if got := eng.Suggest("i"); got != "stanbul" {
@@ -166,7 +155,6 @@ func TestFoldPrefixLen(t *testing.T) {
 	}
 }
 
-// L33: a directory listing is cached for a second, not re-read per keystroke.
 func TestDirCacheTTL(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x"), 0o644); err != nil {

@@ -135,11 +135,10 @@ func TestTabCreationAndCancellation(t *testing.T) {
 		t.Errorf("expected non-nil PTY")
 	}
 
-	// Verify clean Close()
 	tab.Close()
 	select {
 	case <-tab.ctx.Done():
-		// Closed cleanly
+
 	default:
 		t.Errorf("expected tab context to be canceled on Close()")
 	}
@@ -152,16 +151,13 @@ func TestHandleEventInvalidTabBounds(t *testing.T) {
 	}
 	var pending platform.Event
 	ch := make(chan platform.Event)
-	// Must not panic on invalid activeTabIdx or nil tabs
+
 	shouldExit := app.handleEvent(platform.ExposeEvent{}, &pending, ch)
 	if shouldExit {
 		t.Errorf("expected handleEvent to return false on invalid activeTabIdx")
 	}
 }
 
-// M7/M13: a tab whose command exits must report its exit code, and the
-// exit waiter must close the PTY before notifying (so the notification
-// cannot block on the bounded channel while the PTY stays open).
 func TestTabExitCodePropagated(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -199,8 +195,6 @@ func TestTabExitCodePropagated(t *testing.T) {
 	}
 }
 
-// M9: the window's app-cursor query must follow the active tab's terminal
-// (DECCKM state), so Translate can emit SS3 sequences for every key.
 func TestIsAppCursorFollowsActiveTab(t *testing.T) {
 	off := terminal.New(80, 24)
 	on := terminal.New(80, 24)
@@ -223,8 +217,7 @@ func TestIsAppCursorFollowsActiveTab(t *testing.T) {
 	if !app.isAppCursor() {
 		t.Fatal("expected true for an application-cursor terminal")
 	}
-	// switchTab stores the new tab's terminal in the same pointer (kept in
-	// sync by the Store in switchTab); here we move it the same way.
+
 	app.activeTermPtr.Store(off)
 	if app.isAppCursor() {
 		t.Fatal("expected false after moving the pointer back")

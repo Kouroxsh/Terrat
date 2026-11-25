@@ -24,9 +24,6 @@ func TestSetAndGetDefaultShell(t *testing.T) {
 	}
 }
 
-// M17: a configured or $SHELL value that does not exist must fall back
-// instead of being returned verbatim (which made pty.Start fail and the
-// app exit without ever opening a window).
 func TestResolveUnixShellFallback(t *testing.T) {
 	t.Setenv("SHELL", "/nonexistent/shell-xyz")
 	got := ResolveUnixShell("/nonexistent/configured-sh")

@@ -31,11 +31,6 @@ func drainChannel(ch chan struct{}) {
 	}
 }
 
-// findSearchMatches scans the terminal's full history (scrollback + grid)
-// for all case-insensitive occurrences of query. Row is the absolute row
-// number (0 is the oldest scrollback row); the canvas maps it to a
-// viewport row when rendering, so highlights stay correct while scrolling.
-// A match spanning wrapped rows comes back as one entry per physical row.
 func findSearchMatches(term *terminal.Terminal, query string) []render.SearchMatch {
 	if query == "" || term == nil {
 		return nil

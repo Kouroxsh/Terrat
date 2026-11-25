@@ -8,7 +8,6 @@ import (
 	"github.com/jezek/xgb/xproto"
 )
 
-// keyHandlerWith returns a KeyHandler whose only keycode (10) maps to syms.
 func keyHandlerWith(syms ...xproto.Keysym) *KeyHandler {
 	return &KeyHandler{
 		minKeycode:        10,
@@ -19,15 +18,14 @@ func keyHandlerWith(syms ...xproto.Keysym) *KeyHandler {
 }
 
 func TestCtrlSpaceAndCtrlSlash(t *testing.T) {
-	// L39: Ctrl+Space is NUL (0x00), not a space; Ctrl+/ is 0x1f, not '/'.
-	kh := keyHandlerWith(0x20) // space
+	kh := keyHandlerWith(0x20)
 	ev := xproto.KeyPressEvent{Detail: 10, State: ModCtrl}
 	b, act := kh.Translate(ev)
 	if act != ActionNone || len(b) != 1 || b[0] != 0x00 {
 		t.Fatalf("Ctrl+Space = %q, act %v, want single 0x00 byte", b, act)
 	}
 
-	kh = keyHandlerWith(0x2f) // '/'
+	kh = keyHandlerWith(0x2f)
 	b, act = kh.Translate(ev)
 	if act != ActionNone || len(b) != 1 || b[0] != 0x1f {
 		t.Fatalf("Ctrl+/ = %q, act %v, want single 0x1f byte", b, act)
@@ -35,18 +33,17 @@ func TestCtrlSpaceAndCtrlSlash(t *testing.T) {
 }
 
 func TestCapsLockNonASCII(t *testing.T) {
-	// L40: CapsLock must fold Greek/Cyrillic/Latin-1 letters, not just ASCII.
 	cases := []struct {
 		syms  []xproto.Keysym
 		state uint16
 		want  xproto.Keysym
 	}{
-		{[]xproto.Keysym{0x07e1, 0x07c1}, ModLock, 0x07c1},     // legacy Greek α -> Α
-		{[]xproto.Keysym{0x06c1}, ModLock, 0x06e1},             // legacy Cyrillic а -> А
-		{[]xproto.Keysym{0x00e9}, ModLock, 0x00c9},             // Latin-1 é -> É
-		{[]xproto.Keysym{0x03bb}, ModLock, 0x039b},             // direct-Unicode λ -> Λ
-		{[]xproto.Keysym{0x61, 0x41}, ModLock | ModShift, 'a'}, // Shift+CapsLock lowers
-		{[]xproto.Keysym{0x61, 0x41}, ModLock, 'A'},            // CapsLock uppers ASCII
+		{[]xproto.Keysym{0x07e1, 0x07c1}, ModLock, 0x07c1},
+		{[]xproto.Keysym{0x06c1}, ModLock, 0x06e1},
+		{[]xproto.Keysym{0x00e9}, ModLock, 0x00c9},
+		{[]xproto.Keysym{0x03bb}, ModLock, 0x039b},
+		{[]xproto.Keysym{0x61, 0x41}, ModLock | ModShift, 'a'},
+		{[]xproto.Keysym{0x61, 0x41}, ModLock, 'A'},
 	}
 	for _, c := range cases {
 		kh := keyHandlerWith(c.syms...)
@@ -58,7 +55,6 @@ func TestCapsLockNonASCII(t *testing.T) {
 }
 
 func TestFuncKeySeq(t *testing.T) {
-	// L41: modified function keys encode their modifiers; F13-F20 exist.
 	cases := []struct {
 		sym              xproto.Keysym
 		shift, alt, ctrl bool
@@ -86,14 +82,12 @@ func TestFuncKeySeq(t *testing.T) {
 		t.Fatalf("F21 must stay unmapped (no standard xterm code), got %q", got)
 	}
 
-	// Through Translate: Alt+F1 encodes Alt in the parameter and must NOT
-	// also gain an ESC prefix.
 	kh := keyHandlerWith(0xffbe)
 	b, _ := kh.Translate(xproto.KeyPressEvent{Detail: 10, State: ModAlt})
 	if string(b) != "\x1b[1;3P" {
 		t.Fatalf("Alt+F1 = %q, want %q", b, "\x1b[1;3P")
 	}
-	// Shift+F13 reaches the app instead of being dropped.
+
 	kh = keyHandlerWith(0xffca)
 	b, _ = kh.Translate(xproto.KeyPressEvent{Detail: 10, State: ModShift})
 	if string(b) != "\x1b[25;2~" {
@@ -102,9 +96,7 @@ func TestFuncKeySeq(t *testing.T) {
 }
 
 func TestShiftNavKeysAltScreen(t *testing.T) {
-	// L42: on the normal screen Shift+PgUp scrolls; on the alternate
-	// screen the shifted key reaches the app.
-	kh := keyHandlerWith(0xff55) // Prior
+	kh := keyHandlerWith(0xff55)
 	ev := xproto.KeyPressEvent{Detail: 10, State: ModShift}
 	if _, act := kh.Translate(ev); act != ActionScrollUp {
 		t.Fatalf("Shift+PgUp (no flags) act = %v, want ActionScrollUp", act)
@@ -117,23 +109,23 @@ func TestShiftNavKeysAltScreen(t *testing.T) {
 		t.Fatalf("Shift+PgUp (alt screen) = %q, act %v, want %q", b, act, "\x1b[5;2~")
 	}
 
-	kh = keyHandlerWith(0xff56) // Next
+	kh = keyHandlerWith(0xff56)
 	b, act = kh.Translate(ev, false, true)
 	if act != ActionNone || string(b) != "\x1b[6;2~" {
 		t.Fatalf("Shift+PgDn (alt screen) = %q, act %v, want %q", b, act, "\x1b[6;2~")
 	}
-	kh = keyHandlerWith(0xff50) // Home
+	kh = keyHandlerWith(0xff50)
 	b, act = kh.Translate(ev, false, true)
 	if act != ActionNone || string(b) != "\x1b[1;2H" {
 		t.Fatalf("Shift+Home (alt screen) = %q, act %v, want %q", b, act, "\x1b[1;2H")
 	}
-	kh = keyHandlerWith(0xff57) // End
+	kh = keyHandlerWith(0xff57)
 	b, act = kh.Translate(ev, false, true)
 	if act != ActionNone || string(b) != "\x1b[1;2F" {
 		t.Fatalf("Shift+End (alt screen) = %q, act %v, want %q", b, act, "\x1b[1;2F")
 	}
-	// Keypad variants behave the same.
-	kh = keyHandlerWith(0xff9a) // KP_Prior
+
+	kh = keyHandlerWith(0xff9a)
 	b, act = kh.Translate(ev, false, true)
 	if act != ActionNone || string(b) != "\x1b[5;2~" {
 		t.Fatalf("Shift+KP_Prior (alt screen) = %q, act %v, want %q", b, act, "\x1b[5;2~")
@@ -141,30 +133,28 @@ func TestShiftNavKeysAltScreen(t *testing.T) {
 }
 
 func TestKeySymShortMappingNoPanic(t *testing.T) {
-	// L49: a mapping reply shorter than keysymsPerKeycode * keycodes must
-	// degrade to "unknown key", not panic the event loop.
 	kh := &KeyHandler{
 		minKeycode:        10,
 		maxKeycode:        10,
 		keysymsPerKeycode: 7,
 		keysyms:           []xproto.Keysym{0x61},
 	}
-	// Group 3 (bits 13-14) asks for column 6, past the end of the row.
+
 	ev := xproto.KeyPressEvent{Detail: 10, State: 3 << 13}
 	if got := kh.KeySym(ev); got != 0x61 {
 		t.Fatalf("KeySym with short mapping = %#x, want %#x (group fallback)", got, 0x61)
 	}
-	// Shift asks for column 1, also past the end of the one-keysym row.
+
 	ev = xproto.KeyPressEvent{Detail: 10, State: ModShift}
 	if got := kh.KeySym(ev); got != 0x61 {
 		t.Fatalf("KeySym with short mapping + Shift = %#x, want %#x", got, 0x61)
 	}
-	// An empty mapping reply.
+
 	kh = &KeyHandler{minKeycode: 10, maxKeycode: 10, keysymsPerKeycode: 1, keysyms: nil}
 	if got := kh.KeySym(xproto.KeyPressEvent{Detail: 10}); got != 0 {
 		t.Fatalf("KeySym with empty mapping = %#x, want 0", got)
 	}
-	// A keycode past the end of the mapping entirely.
+
 	kh = &KeyHandler{minKeycode: 10, maxKeycode: 12, keysymsPerKeycode: 2, keysyms: []xproto.Keysym{0x61, 0x41}}
 	if got := kh.KeySym(xproto.KeyPressEvent{Detail: 11}); got != 0 {
 		t.Fatalf("KeySym for unmapped keycode = %#x, want 0", got)

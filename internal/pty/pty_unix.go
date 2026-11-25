@@ -21,18 +21,14 @@ type TerminalPTY struct {
 	cmd       *exec.Cmd
 	shellName string
 
-	// mu serialises Write, Resize and the final file close so concurrent
-	// writers (UI keystrokes/paste, the CPR-response pump, ghost-text
-	// writes) can never interleave bytes mid-escape-sequence.
 	mu sync.Mutex
-	// done is closed by Close: no new I/O may start afterwards.
+
 	done chan struct{}
-	// closeOnce makes Close idempotent.
+
 	closeOnce sync.Once
-	// fileClosed guards the master fd; it is only ever closed by
-	// CloseFile, and only once.
+
 	fileClosed bool
-	// waitDone is closed by Wait once the child has been reaped.
+
 	waitDone chan struct{}
 	waitOnce sync.Once
 }
@@ -105,8 +101,7 @@ func (p *TerminalPTY) Write(b []byte) (int, error) {
 		return 0, os.ErrClosed
 	default:
 	}
-	// Serialised by p.mu, so concurrent writers cannot interleave.
-	// Loop so a short write cannot silently truncate an escape sequence.
+
 	total := 0
 	for total < len(b) {
 		n, err := p.file.Write(b[total:])
@@ -138,15 +133,6 @@ func (p *TerminalPTY) Resize(cols, rows, pixelWidth, pixelHeight uint16) error {
 	return pty.Setsize(p.file, ws)
 }
 
-// Close shuts the PTY down: it stops new I/O and kills the child's process
-// group (SIGHUP, escalating to SIGTERM then SIGKILL) so HUP-ignoring
-// processes cannot survive as orphans. It is idempotent.
-//
-// The master fd itself is NOT closed here: the reader goroutine is blocked
-// in Read, and closing the fd under it risks the fd number being reused by
-// a new tab's PTY. Instead the reader closes the fd itself via CloseFile
-// once its Read has returned; Close starts a bounded watchdog that closes
-// it after 2s if the reader is somehow still stuck.
 func (p *TerminalPTY) Close() error {
 	p.closeOnce.Do(func() {
 		close(p.done)
@@ -162,9 +148,6 @@ func (p *TerminalPTY) Close() error {
 	return nil
 }
 
-// CloseFile closes the master fd, at most once. It must only be called
-// after no goroutine is blocked in Read on this PTY (the reader calls it
-// when its Read loop exits); the Close watchdog calls it as a last resort.
 func (p *TerminalPTY) CloseFile() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -175,11 +158,6 @@ func (p *TerminalPTY) CloseFile() error {
 	return p.file.Close()
 }
 
-// killProcessGroup signals the child's whole process group. The child is a
-// session leader (creack/pty sets Setsid), so its pgid equals its pid.
-// SIGHUP goes out immediately; a goroutine escalates to SIGTERM after
-// 200ms and SIGKILL after a further 500ms if the group is still alive,
-// stopping early once Wait has reaped the child.
 func (p *TerminalPTY) killProcessGroup() {
 	if p.cmd == nil || p.cmd.Process == nil {
 		return
@@ -201,7 +179,7 @@ func (p *TerminalPTY) killProcessGroup() {
 				timer.Stop()
 				return
 			}
-			// Signal 0 probes existence; EPERM means alive but unpermitted.
+
 			if err := syscall.Kill(pid, 0); err != nil {
 				return
 			}
@@ -220,9 +198,6 @@ func (p *TerminalPTY) Wait() (*os.ProcessState, error) {
 	return p.cmd.ProcessState, err
 }
 
-// processAlive reports whether pid still refers to a live process:
-// Kill(pid, 0) fails with ESRCH only once the pid is gone (EPERM means it
-// exists but cannot be signalled).
 func processAlive(pid int) bool {
 	err := syscall.Kill(pid, 0)
 	return err == nil || err == syscall.EPERM
@@ -232,15 +207,11 @@ func (p *TerminalPTY) IsForegroundShell() bool {
 	if p == nil || p.file == nil || p.cmd == nil || p.cmd.Process == nil {
 		return false
 	}
-	// L17: fail closed instead of fail-open — on any error (dead child,
-	// ioctl failure) report "not the foreground shell" so ghost text and
-	// diagnostics are not offered for an app that is actually running.
+
 	if !processAlive(p.cmd.Process.Pid) {
 		return false
 	}
-	// The fd fetch and the ioctl run under mu: CloseFile closes the same
-	// os.File under mu, and calling Fd() concurrently with Close() is a
-	// data race on the file's internals (flagged by -race).
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.fileClosed || p.file == nil {
@@ -261,8 +232,7 @@ func (p *TerminalPTY) GetCwd() string {
 	if p == nil || p.cmd == nil || p.cmd.Process == nil {
 		return ""
 	}
-	// L17: do not trust /proc/<pid>/cwd for a dead (or already reaped and
-	// reused) pid.
+
 	if !processAlive(p.cmd.Process.Pid) {
 		return ""
 	}

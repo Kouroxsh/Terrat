@@ -1,11 +1,9 @@
 package platform
 
-// Event is the common interface implemented by all platform window events.
 type Event interface {
 	isPlatformEvent()
 }
 
-// MotionNotifyEvent represents mouse movement.
 type MotionNotifyEvent struct {
 	EventX int16
 	EventY int16
@@ -16,8 +14,6 @@ type MotionNotifyEvent struct {
 
 func (MotionNotifyEvent) isPlatformEvent() {}
 
-// ButtonPressEvent represents a mouse button press or scroll wheel step.
-// Detail: 1=Left, 2=Middle, 3=Right, 4=ScrollUp, 5=ScrollDown.
 type ButtonPressEvent struct {
 	Detail uint8
 	State  uint16
@@ -29,7 +25,6 @@ type ButtonPressEvent struct {
 
 func (ButtonPressEvent) isPlatformEvent() {}
 
-// ButtonReleaseEvent represents a mouse button release.
 type ButtonReleaseEvent struct {
 	Detail uint8
 	State  uint16
@@ -41,7 +36,6 @@ type ButtonReleaseEvent struct {
 
 func (ButtonReleaseEvent) isPlatformEvent() {}
 
-// KeyPressEvent represents a key press with pre-resolved string and action.
 type KeyPressEvent struct {
 	Detail uint8
 	State  uint16
@@ -52,7 +46,6 @@ type KeyPressEvent struct {
 
 func (KeyPressEvent) isPlatformEvent() {}
 
-// ConfigureNotifyEvent represents a window resize or reconfiguration.
 type ConfigureNotifyEvent struct {
 	Width  uint16
 	Height uint16
@@ -60,36 +53,28 @@ type ConfigureNotifyEvent struct {
 
 func (ConfigureNotifyEvent) isPlatformEvent() {}
 
-// ExposeEvent requests a redraw of the window area.
 type ExposeEvent struct{}
 
 func (ExposeEvent) isPlatformEvent() {}
 
-// FocusInEvent is fired when the window gains focus. It mirrors
-// FocusOutEvent: the app clears transient state on focus-out and may
-// restore or refresh it on focus-in.
 type FocusInEvent struct{}
 
 func (FocusInEvent) isPlatformEvent() {}
 
-// FocusOutEvent is fired when the window loses focus.
 type FocusOutEvent struct{}
 
 func (FocusOutEvent) isPlatformEvent() {}
 
-// PasteNotifyEvent is fired when clipboard text has arrived.
 type PasteNotifyEvent struct {
 	Text string
 }
 
 func (PasteNotifyEvent) isPlatformEvent() {}
 
-// CloseRequestEvent is fired when the user clicks the window close button or sends WM_DELETE_WINDOW.
 type CloseRequestEvent struct{}
 
 func (CloseRequestEvent) isPlatformEvent() {}
 
-// MappingNotifyEvent is fired when the keyboard mapping changes.
 type MappingNotifyEvent struct{}
 
 func (MappingNotifyEvent) isPlatformEvent() {}

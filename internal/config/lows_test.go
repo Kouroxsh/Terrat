@@ -8,8 +8,6 @@ import (
 	"github.com/Kouroxsh/Terrat/internal/terminal"
 )
 
-// L36: an unknown theme name must not survive in the config while a
-// different theme is applied.
 func TestUnknownThemeFallsBackToAuto(t *testing.T) {
 	for _, pref := range []string{"auto", "tokyo-night", "catppuccin-mocha", "minecraft", "tokyo-day", "solarized-light"} {
 		if !terminal.IsValidThemePreference(pref) {
@@ -36,7 +34,6 @@ func TestUnknownThemeFallsBackToAuto(t *testing.T) {
 		t.Fatalf("expected unknown theme to fall back to 'auto', got %q", cfg.Theme)
 	}
 
-	// A known theme is kept as-is.
 	if err := os.WriteFile(path, []byte(`{"theme": "minecraft"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -45,15 +42,12 @@ func TestUnknownThemeFallsBackToAuto(t *testing.T) {
 	}
 }
 
-// L37: a relative XDG_CONFIG_HOME must be ignored, not resolved
-// against the current directory.
 func TestRelativeXDGConfigHomeIgnored(t *testing.T) {
-	// Absolute: honoured.
 	path, err := configPath("", "/abs/xdg", "/home/u/.config")
 	if err != nil || path != "/abs/xdg/terrat/config.json" {
 		t.Fatalf("absolute XDG_CONFIG_HOME: path = %q, err = %v", path, err)
 	}
-	// Relative: falls through to the user config dir.
+
 	path, err = configPath("", "relative/xdg", "/home/u/.config")
 	if err != nil || path != "/home/u/.config/terrat/config.json" {
 		t.Fatalf("relative XDG_CONFIG_HOME: path = %q, err = %v", path, err)
@@ -64,7 +58,6 @@ func TestRelativeXDGConfigHomeIgnored(t *testing.T) {
 	}
 }
 
-// L38: Load must not create files as a side effect.
 func TestLoadDoesNotCreateConfigFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
@@ -77,7 +70,6 @@ func TestLoadDoesNotCreateConfigFile(t *testing.T) {
 		t.Fatalf("expected Load not to create %s", path)
 	}
 
-	// Corrupt config: backed up, but not recreated by Load either.
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}

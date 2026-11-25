@@ -16,13 +16,13 @@ func TestDiagnosticAppearsOnlyInTerminalBody(t *testing.T) {
 	c := NewCanvas(fe)
 	c.Resize(1200, 400)
 	term := terminal.New(c.Cols(), c.Rows())
-	c.Render(term, false, "Terrat", "", nil, nil, 0, nil, "", nil)
+	c.Render(term, false, "", nil, nil, 0, nil, "", nil)
 	before := bytes.Clone(c.Pixels)
 	diag := &DiagnosticInfo{
 		IsError: true, Message: "Command 'kir' not recognized",
 		Suggestion: "Did you mean 'dir'?", QuickFix: "dir",
 	}
-	c.Render(term, false, "Terrat", "", nil, nil, 0, nil, "", diag)
+	c.Render(term, false, "", nil, nil, 0, nil, "", diag)
 	headerEnd := HeaderHeight * c.Stride
 	if !bytes.Equal(before[:headerEnd], c.Pixels[:headerEnd]) {
 		t.Error("diagnostic must not appear in the header")
@@ -56,7 +56,6 @@ func TestRenderPreferencesModal(t *testing.T) {
 		t.Fatalf("expected positive modal dimensions, got w=%d, h=%d, rowH=%d", modalW, modalH, rowH)
 	}
 
-	// Modal should be anchored in top-right corner under header
 	if modalX < c.Width/2 {
 		t.Fatalf("expected modal to be in the right corner, got modalX=%d in width %d", modalX, c.Width)
 	}
@@ -75,7 +74,7 @@ func TestSearchHighlightsHandleOverlapsAndReset(t *testing.T) {
 	c.Resize(800, 400)
 	term := terminal.New(c.Cols(), c.Rows())
 	matches := []SearchMatch{{Row: 0, StartCol: 1, EndCol: 3}, {Row: 0, StartCol: 2, EndCol: 2}, {Row: -1, StartCol: 0, EndCol: 100}}
-	c.Render(term, false, "Terrat", "", nil, matches, 1, nil, "", nil)
+	c.Render(term, false, "", nil, matches, 1, nil, "", nil)
 	for x, want := range map[int]uint32{1: 0xe0af68, 2: 0x9ece6a, 3: 0xe0af68} {
 		p := (HeaderHeight+PaddingTop)*c.Stride + (PaddingLeft+x*fe.CharWidth())*4
 		got := uint32(c.Pixels[p+2])<<16 | uint32(c.Pixels[p+1])<<8 | uint32(c.Pixels[p])
@@ -83,7 +82,7 @@ func TestSearchHighlightsHandleOverlapsAndReset(t *testing.T) {
 			t.Fatalf("column %d background = %x, want %x", x, got, want)
 		}
 	}
-	c.Render(term, false, "Terrat", "", nil, nil, 0, nil, "", nil)
+	c.Render(term, false, "", nil, nil, 0, nil, "", nil)
 	p := (HeaderHeight+PaddingTop)*c.Stride + (PaddingLeft+2*fe.CharWidth())*4
 	got := uint32(c.Pixels[p+2])<<16 | uint32(c.Pixels[p+1])<<8 | uint32(c.Pixels[p])
 	if got != uint32(term.Theme().BG) {

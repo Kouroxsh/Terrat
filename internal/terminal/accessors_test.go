@@ -5,21 +5,15 @@ import (
 	"testing"
 )
 
-// TestLockingAccessorsConcurrentWithWrites (H3): the locking accessors must
-// be safe to call from the UI goroutine while the PTY goroutine mutates the
-// same fields via Write. Run with -race: before the fix, the *Locked()
-// accessors read these fields without holding mu and the race detector
-// fires here.
 func TestLockingAccessorsConcurrentWithWrites(t *testing.T) {
 	term := New(80, 24)
 
-	// Toggle the modes the accessors read, so Write actually mutates them.
 	seqs := []string{
-		"\x1b[?1000h", "\x1b[?1000l", // mouse tracking
-		"\x1b[?1006h", "\x1b[?1006l", // mouse SGR
-		"\x1b[?1h", "\x1b[?1l", // application cursor keys
-		"\x1b[?2004h", "\x1b[?2004l", // bracketed paste
-		"\x1b[?1049h", "\x1b[?1049l", // alt screen
+		"\x1b[?1000h", "\x1b[?1000l",
+		"\x1b[?1006h", "\x1b[?1006l",
+		"\x1b[?1h", "\x1b[?1l",
+		"\x1b[?2004h", "\x1b[?2004l",
+		"\x1b[?1049h", "\x1b[?1049l",
 		"hello world\r\n",
 	}
 

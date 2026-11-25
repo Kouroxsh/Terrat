@@ -2,9 +2,6 @@ package terminal
 
 import "testing"
 
-// TestFindMatchesScrollback (M5): search must cover the scrollback, not
-// just the visible grid. Absolute rows count from the oldest scrollback
-// row (0) through the grid rows.
 func TestFindMatchesScrollback(t *testing.T) {
 	term := New(10, 4)
 	writeTerminal(t, term, "line0\r\nline1\r\nline2\r\nline3\r\nline4\r\nline5\r\nline6\r\nline7\r\nline8\r\nline9")
@@ -22,7 +19,6 @@ func TestFindMatchesScrollback(t *testing.T) {
 		t.Fatalf("line9 should match grid row 3 (absolute row 9), got %+v", m)
 	}
 
-	// Case-insensitive, like the viewport search.
 	m = term.FindMatches("LINE5")
 	if len(m) != 1 || m[0].AbsRow != 5 {
 		t.Fatalf("LINE5 should match absolute row 5, got %+v", m)
@@ -36,12 +32,10 @@ func TestFindMatchesScrollback(t *testing.T) {
 	}
 }
 
-// TestFindMatchesWrappedLine (M5): a query spanning a wrapped line must be
-// found, split into one entry per physical row.
 func TestFindMatchesWrappedLine(t *testing.T) {
 	term := New(10, 4)
 	writeTerminal(t, term, "abcdefghijklmnop")
-	// Row 0: "abcdefghij", row 1: "klmnop" (wrapped continuation).
+
 	m := term.FindMatches("jklm")
 	if len(m) != 2 {
 		t.Fatalf("expected 2 row entries for a wrap-spanning match, got %+v", m)
@@ -53,14 +47,11 @@ func TestFindMatchesWrappedLine(t *testing.T) {
 		t.Fatalf("unexpected second row entry: %+v", m[1])
 	}
 
-	// A query fully inside the second row still works.
 	m = term.FindMatches("klm")
 	if len(m) != 1 || m[0] != (AbsoluteSearchMatch{AbsRow: 1, StartCol: 0, EndCol: 2}) {
 		t.Fatalf("unexpected match for 'klm': %+v", m)
 	}
 
-	// A full row followed by an explicit newline is NOT one logical line:
-	// "9abc" must not match across the newline.
 	term2 := New(10, 4)
 	writeTerminal(t, term2, "0123456789\r\nabcdefghij")
 	if m := term2.FindMatches("9abc"); len(m) != 0 {
@@ -68,9 +59,6 @@ func TestFindMatchesWrappedLine(t *testing.T) {
 	}
 }
 
-// TestFindMatchesWrappedLineInScrollback (M5): wrapped flags must survive
-// scrolling into the history, so wrap-spanning matches are still found
-// after the lines leave the viewport.
 func TestFindMatchesWrappedLineInScrollback(t *testing.T) {
 	term := New(10, 4)
 	writeTerminal(t, term, "abcdefghijklmnop\r\nAAAA\r\nBBBB\r\nCCCC\r\nDDDD\r\nEEEE")
@@ -89,8 +77,6 @@ func TestFindMatchesWrappedLineInScrollback(t *testing.T) {
 	}
 }
 
-// TestFindMatchesAltScreen (M5): the alternate screen has no scrollback;
-// search covers just the alt grid.
 func TestFindMatchesAltScreen(t *testing.T) {
 	term := New(10, 4)
 	writeTerminal(t, term, "visible\r\nlines\r\n")

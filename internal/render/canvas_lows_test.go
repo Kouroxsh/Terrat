@@ -10,8 +10,7 @@ func TestDisplayWidth(t *testing.T) {
 	if got := displayWidth("abc"); got != 3 {
 		t.Fatalf("displayWidth(abc) = %d, want 3", got)
 	}
-	// 4 Persian letters are 8 bytes but 4 cells; the emoji is 4
-	// bytes but 1 cell.
+
 	if got := displayWidth("سلام"); got != 4 {
 		t.Fatalf("displayWidth(سلام) = %d, want 4", got)
 	}
@@ -21,7 +20,6 @@ func TestDisplayWidth(t *testing.T) {
 }
 
 func TestTruncateQueryEnd(t *testing.T) {
-	// Keeps the tail, never cuts a rune in half.
 	if got := truncateQueryEnd("سلامدنیا", 4); got != "دنیا" {
 		t.Fatalf("truncateQueryEnd = %q, want دنیا", got)
 	}
@@ -46,8 +44,7 @@ func TestRenderSearchBarTinyWindow(t *testing.T) {
 	for _, size := range [][2]int{{100, 60}, {30, 40}, {10, 10}} {
 		c := NewCanvas(fe)
 		c.Resize(size[0], size[1])
-		// A Persian query must not panic or slice mid-rune, even
-		// when the bar is narrower than the query.
+
 		barX, barY, barW, barH := c.RenderSearchBar(terminal.ThemeTokyoNight, "سلام دنیا", 1, 3)
 		if barW < 1 || barH < 1 || barX < 0 || barY < 0 {
 			t.Fatalf("size %v: bad search bar geometry x=%d y=%d w=%d h=%d", size, barX, barY, barW, barH)

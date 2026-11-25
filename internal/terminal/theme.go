@@ -141,11 +141,6 @@ var ThemeMinecraft = &Theme{
 	},
 }
 
-// IsValidThemePreference reports whether pref is a value a theme
-// preference may hold: "auto" (follow the system) or one of the built-in
-// theme IDs. Anything else used to be kept in the config while
-// ResolveTheme silently applied Tokyo Night/Day, so the preferences modal
-// displayed a theme that was not in effect (L36).
 func IsValidThemePreference(pref string) bool {
 	switch pref {
 	case "auto", "tokyo-night", "catppuccin-mocha", "minecraft", "tokyo-day", "solarized-light":

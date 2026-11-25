@@ -30,11 +30,11 @@ func BenchmarkRender(b *testing.B) {
 			}
 		}
 		b.Run(name, func(b *testing.B) {
-			c.Render(term, true, "Terrat", "", tabs, matches, 0, nil, "", nil)
+			c.Render(term, true, "", tabs, matches, 0, nil, "", nil)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				c.Render(term, true, "Terrat", "", tabs, matches, 0, nil, "", nil)
+				c.Render(term, true, "", tabs, matches, 0, nil, "", nil)
 			}
 		})
 	}
