@@ -38,13 +38,11 @@ func TestAutosuggestAddAndPrioritize(t *testing.T) {
 	eng.Add("make build")
 	eng.Add("make test")
 
-	// Most recently added should match first
 	suffix := eng.Suggest("make")
 	if suffix != " test" {
 		t.Fatalf("expected ' test' as most recent match, got %q", suffix)
 	}
 
-	// Re-add make build to bump priority
 	eng.Add("make build")
 	suffix = eng.Suggest("make")
 	if suffix != " build" {
@@ -70,31 +68,26 @@ func TestAutosuggestPathWithSpaces(t *testing.T) {
 
 	eng := NewEngine()
 
-	// 1. Unquoted prefix
 	suffix := eng.Suggest("cd My", tmpDir)
 	if suffix != "\\ Projects\\ Folder/" {
 		t.Fatalf("expected '\\ Projects\\ Folder/', got %q", suffix)
 	}
 
-	// 2. Escaped space prefix
 	suffix = eng.Suggest("cd My\\ ", tmpDir)
 	if suffix != "Projects\\ Folder/" {
 		t.Fatalf("expected 'Projects\\ Folder/', got %q", suffix)
 	}
 
-	// 3. Double-quoted prefix
 	suffix = eng.Suggest("cd \"My", tmpDir)
 	if suffix != " Projects Folder/" {
 		t.Fatalf("expected ' Projects Folder/', got %q", suffix)
 	}
 
-	// 4. Single unescaped space typed after first word
 	suffix = eng.Suggest("cd My ", tmpDir)
 	if suffix != "Projects\\ Folder/" {
 		t.Fatalf("expected 'Projects\\ Folder/', got %q", suffix)
 	}
 
-	// 5. File match
 	suffix = eng.Suggest("cat scr", tmpDir)
 	if suffix != "ipt\\ with\\ space.sh" {
 		t.Fatalf("expected 'ipt\\ with\\ space.sh', got %q", suffix)
@@ -132,7 +125,6 @@ func TestHistoryLoadingIsBoundedAndKeepsRecentUniqueCommands(t *testing.T) {
 	}
 }
 
-// M24: real shell history must win over the built-in defaults.
 func TestHistoryBeatsDefaults(t *testing.T) {
 	home := t.TempDir()
 	if err := os.WriteFile(filepath.Join(home, ".bash_history"), []byte("git stash\n"), 0600); err != nil {
@@ -145,7 +137,6 @@ func TestHistoryBeatsDefaults(t *testing.T) {
 	}
 }
 
-// M25: a token ending in `/` completes inside that directory.
 func TestTrailingSlashListsDirectory(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "usr"), 0755); err != nil {
@@ -162,7 +153,7 @@ func TestTrailingSlashListsDirectory(t *testing.T) {
 	if got != "bin/" {
 		t.Fatalf("expected first entry 'bin/' inside usr/, got %q", got)
 	}
-	// `cd ../` from a subdirectory lists the parent.
+
 	sub := filepath.Join(dir, "sub")
 	if err := os.Mkdir(sub, 0755); err != nil {
 		t.Fatal(err)
@@ -175,7 +166,6 @@ func TestTrailingSlashListsDirectory(t *testing.T) {
 	}
 }
 
-// M26: the first token (command word) must not be path-completed.
 func TestFirstTokenNotPathCompleted(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte("x"), 0600); err != nil {
@@ -186,7 +176,7 @@ func TestFirstTokenNotPathCompleted(t *testing.T) {
 	if got := eng.Suggest("do", dir); got != "cker ps -a" {
 		t.Fatalf("expected history suggestion 'cker ps -a', got %q", got)
 	}
-	// ... but a real path as the first token still completes.
+
 	if err := os.Mkdir(filepath.Join(dir, "bin"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +185,6 @@ func TestFirstTokenNotPathCompleted(t *testing.T) {
 	}
 }
 
-// M27: bash HISTTIMEFORMAT timestamps must never be suggested.
 func TestTimestampLinesNotSuggested(t *testing.T) {
 	home := t.TempDir()
 	if err := os.WriteFile(filepath.Join(home, ".bash_history"), []byte("#1600000000\necho hi\n"), 0600); err != nil {

@@ -6,9 +6,6 @@ import (
 	"time"
 )
 
-// M8: the Noto CJK .ttc must actually load as a fallback. Its fonts are
-// CFF-flavoured (OTTO), which freetype's truetype.Parse rejects outright,
-// so the old loader silently skipped the only CJK fallback font.
 func TestCJKTTCLoadsAsFallback(t *testing.T) {
 	ttc := "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
 	if _, err := os.Stat(ttc); err != nil {
@@ -24,7 +21,6 @@ func TestCJKTTCLoadsAsFallback(t *testing.T) {
 	}
 	defer fe.Close()
 
-	// Kick off the lazy load with a CJK rune the main face lacks.
 	_ = fe.GetWideGlyph('世', false)
 
 	deadline := time.Now().Add(10 * time.Second)
@@ -51,7 +47,7 @@ func TestCJKTTCLoadsAsFallback(t *testing.T) {
 	if !fb.has('あ') {
 		t.Fatal("CJK fallback does not cover 'あ' (U+3042)")
 	}
-	// And the wide glyph for it must actually paint, at double width.
+
 	mask := fe.GetWideGlyph('世', false)
 	if mask.Width != 2*fe.CharWidth() {
 		t.Fatalf("wide glyph width = %d, want %d", mask.Width, 2*fe.CharWidth())
@@ -68,7 +64,6 @@ func TestCJKTTCLoadsAsFallback(t *testing.T) {
 	}
 }
 
-// M15: out-of-range font sizes are clamped to 7–36pt at construction.
 func TestNewFontEngineClampsSize(t *testing.T) {
 	fe, err := NewFontEngine(1000)
 	if err != nil {

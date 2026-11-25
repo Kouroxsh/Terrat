@@ -26,7 +26,6 @@ func TestLevenshteinDistance(t *testing.T) {
 }
 
 func TestAnalyzeTypos(t *testing.T) {
-	// Base command typos
 	d := Analyze("gti status")
 	if d == nil || d.Suggestion != "Did you mean 'git'?" {
 		t.Fatalf("expected git suggestion for 'gti status', got %+v", d)
@@ -37,7 +36,6 @@ func TestAnalyzeTypos(t *testing.T) {
 		t.Fatalf("expected docker suggestion for 'dokcer ps', got %+v", d)
 	}
 
-	// Git subcommand typos
 	d = Analyze("git puch origin")
 	if d == nil || d.Suggestion != "Did you mean 'push'?" {
 		t.Fatalf("expected push suggestion for 'git puch origin', got %+v", d)
@@ -48,13 +46,11 @@ func TestAnalyzeTypos(t *testing.T) {
 		t.Fatalf("expected status suggestion for 'git stats', got %+v", d)
 	}
 
-	// Unclosed quotes
 	d = Analyze("git commit -m \"hello world")
 	if d == nil || d.Severity != SeverityWarning {
 		t.Fatalf("expected unclosed quote warning, got %+v", d)
 	}
 
-	// Privilege check (skipped as root: root needs no sudo, so no warning is correct)
 	if os.Geteuid() != 0 {
 		d = Analyze("apt install neovim")
 		if d == nil || d.Severity != SeverityWarning {
@@ -62,7 +58,6 @@ func TestAnalyzeTypos(t *testing.T) {
 		}
 	}
 
-	// Safe read-only operations should NOT warn
 	if d := Analyze("apt search neovim"); d != nil {
 		t.Fatalf("expected nil for 'apt search neovim', got %+v", d)
 	}
@@ -70,7 +65,6 @@ func TestAnalyzeTypos(t *testing.T) {
 		t.Fatalf("expected nil for 'pacman -Ss firefox', got %+v", d)
 	}
 
-	// Valid subcommands should return nil (no false positives)
 	if d := Analyze("git remote -v"); d != nil {
 		t.Fatalf("expected nil for 'git remote -v', got %+v", d)
 	}
@@ -87,7 +81,6 @@ func TestAnalyzeTypos(t *testing.T) {
 		t.Fatalf("expected nil for 'docker stats', got %+v", d)
 	}
 
-	// Shell builtins should return nil
 	if d := Analyze("cd /tmp"); d != nil {
 		t.Fatalf("expected nil for builtin 'cd', got %+v", d)
 	}
@@ -95,19 +88,16 @@ func TestAnalyzeTypos(t *testing.T) {
 		t.Fatalf("expected nil for builtin 'export', got %+v", d)
 	}
 
-	// Sudo unnesting typo check
 	d = Analyze("sudo gti status")
 	if d == nil || d.Suggestion != "Did you mean 'git'?" {
 		t.Fatalf("expected git suggestion for 'sudo gti status', got %+v", d)
 	}
 
-	// Pipeline active segment typo check
 	d = Analyze("cat main.go | gerp func")
 	if d == nil || d.Suggestion != "Did you mean 'grep'?" {
 		t.Fatalf("expected grep suggestion for pipeline 'cat main.go | gerp func', got %+v", d)
 	}
 
-	// User and system aliases should be recognized and return nil
 	RegisterAlias("ll", "ls -alF")
 	RegisterAlias("cls", "clear")
 	RegisterAlias("gs", "git status")
@@ -122,7 +112,6 @@ func TestAnalyzeTypos(t *testing.T) {
 		t.Fatalf("expected nil for alias 'gs', got %+v", d)
 	}
 
-	// Register alias from command line
 	RegisterAliasFromLine("alias mytest='echo hello'")
 	if !IsAlias("mytest") {
 		t.Fatalf("expected 'mytest' to be registered as alias")
@@ -131,7 +120,6 @@ func TestAnalyzeTypos(t *testing.T) {
 		t.Fatalf("expected nil for alias 'mytest', got %+v", d)
 	}
 
-	// Git aliases should return nil
 	RegisterGitAlias("deploy")
 	RegisterGitAlias("st")
 	if d := Analyze("git deploy \"my feature\""); d != nil {
@@ -141,7 +129,6 @@ func TestAnalyzeTypos(t *testing.T) {
 		t.Fatalf("expected nil for git alias 'st', got %+v", d)
 	}
 
-	// Commands with escaped spaces and quotes in paths should not false-alarm
 	if d := Analyze("cd \"my space folder\""); d != nil {
 		t.Fatalf("expected nil for 'cd \"my space folder\"', got %+v", d)
 	}
@@ -152,7 +139,6 @@ func TestAnalyzeTypos(t *testing.T) {
 		t.Fatalf("expected nil for './my\\ script.sh', got %+v", d)
 	}
 
-	// Valid command should return nil
 	d = Analyze("git status")
 	if d != nil {
 		t.Fatalf("expected nil for valid command, got %+v", d)
@@ -202,7 +188,6 @@ func TestChainedCommandQuickFix(t *testing.T) {
 }
 
 func TestLexerEdgeCases(t *testing.T) {
-	// Chaining operator inside double quotes should not split
 	lex := LexCommandLine(`echo "hello && world"`)
 	if lex.Prefix != "" {
 		t.Fatalf("expected empty prefix, got %q", lex.Prefix)
@@ -214,13 +199,11 @@ func TestLexerEdgeCases(t *testing.T) {
 		t.Fatalf("expected tokenized arguments without quotes, got %v", lex.Tokens)
 	}
 
-	// Single quote inside double quotes should not report unclosed single quote
 	lexQuotes := LexCommandLine(`echo "it's working"`)
 	if lexQuotes.UnclosedQuote != QuoteNone {
 		t.Fatalf("expected no unclosed quote, got %v", lexQuotes.UnclosedQuote)
 	}
 
-	// Escaped operator should not split
 	lexEscaped := LexCommandLine(`echo hello \&\& world`)
 	if lexEscaped.Prefix != "" {
 		t.Fatalf("expected empty prefix for escaped &&, got %q", lexEscaped.Prefix)
@@ -228,20 +211,16 @@ func TestLexerEdgeCases(t *testing.T) {
 }
 
 func TestSafeOperationsExactMatching(t *testing.T) {
-	// Safe operation exact match: apt search does not require root
 	if !isSafeOperation("apt", []string{"apt", "search", "neovim"}) {
 		t.Fatalf("expected apt search to be recognized as safe")
 	}
 
-	// Fake operation with same prefix: apt searchsomething must NOT match
 	if isSafeOperation("apt", []string{"apt", "searchsomething", "neovim"}) {
 		t.Fatalf("expected apt searchsomething to NOT match safe operation")
 	}
 }
 
 func TestLexerRedirectAmpersand(t *testing.T) {
-	// "gti 2>&1": '&' is part of the redirect, not a command separator —
-	// the active segment must stay "gti 2>&1" so the typo is reported.
 	lex := LexCommandLine("gti 2>&1")
 	if lex.ActiveSegment != "gti 2>&1" {
 		t.Fatalf("expected active segment %q, got %q", "gti 2>&1", lex.ActiveSegment)
@@ -253,7 +232,6 @@ func TestLexerRedirectAmpersand(t *testing.T) {
 		t.Fatalf("expected typo suggestion for 'gti 2>&1', got %#v", d)
 	}
 
-	// "&>" redirects stdout+stderr; same treatment.
 	lex = LexCommandLine("gti &> /dev/null")
 	if lex.ActiveSegment != "gti &> /dev/null" {
 		t.Fatalf("expected active segment %q, got %q", "gti &> /dev/null", lex.ActiveSegment)
@@ -262,26 +240,21 @@ func TestLexerRedirectAmpersand(t *testing.T) {
 		t.Fatalf("expected typo suggestion for 'gti &> /dev/null', got %#v", d)
 	}
 
-	// "<&" (fd duplication) is a redirect too.
 	lex = LexCommandLine("gti <&0")
 	if lex.ActiveSegment != "gti <&0" {
 		t.Fatalf("expected active segment %q, got %q", "gti <&0", lex.ActiveSegment)
 	}
 
-	// "|&" still splits: the '|' is the separator and '&' after it does
-	// not turn the next command into a token of its own.
 	lex = LexCommandLine("echo hi |& cat")
 	if lex.ActiveSegment != "cat" {
 		t.Fatalf("expected active segment %q, got %q", "cat", lex.ActiveSegment)
 	}
 
-	// A lone '&' (background) still splits.
 	lex = LexCommandLine("sleep 1 & gti status")
 	if lex.ActiveSegment != "gti status" {
 		t.Fatalf("expected active segment %q, got %q", "gti status", lex.ActiveSegment)
 	}
 
-	// "&&" still splits.
 	lex = LexCommandLine("gti 2>&1 && ls")
 	if lex.ActiveSegment != "ls" {
 		t.Fatalf("expected active segment %q, got %q", "ls", lex.ActiveSegment)
@@ -289,7 +262,6 @@ func TestLexerRedirectAmpersand(t *testing.T) {
 }
 
 func TestLexerUnicodeContinuationByte(t *testing.T) {
-	// Rune \u0585 has UTF-8 encoding []byte{0xd6, 0x85}. 0x85 must not be treated as Latin-1 NEL whitespace.
 	input := "echo \u0585test"
 	lex := LexCommandLine(input)
 	if len(lex.Tokens) != 2 || lex.Tokens[1] != "\u0585test" {
@@ -304,7 +276,6 @@ func TestSubcommandExtraWhitespaceQuickFix(t *testing.T) {
 	}
 }
 
-// M11: env-assignment and wrapper prefixes must not hide the real command.
 func TestAnalyzeCommandPrefixes(t *testing.T) {
 	for _, input := range []string{
 		"FOO=bar gti status",
@@ -318,11 +289,11 @@ func TestAnalyzeCommandPrefixes(t *testing.T) {
 			t.Fatalf("expected git suggestion for %q, got %+v", input, d)
 		}
 	}
-	// `command -v` queries the shell; it must not be treated as running git.
+
 	if d := Analyze("command -v gti"); d != nil {
 		t.Fatalf("expected no diagnostic for 'command -v gti', got %+v", d)
 	}
-	// Privilege warnings must survive prefixes too (non-root only).
+
 	if os.Geteuid() != 0 {
 		d := Analyze("FOO=bar apt install neovim")
 		if d == nil || d.Severity != SeverityWarning {
@@ -366,8 +337,6 @@ func TestStripCommandPrefixes(t *testing.T) {
 	}
 }
 
-// M37: pacman short options are case-sensitive — -SS is a sync, not a search.
-// M38: global flags before the subcommand must be skipped.
 func TestIsSafeOperation(t *testing.T) {
 	cases := []struct {
 		cmd   string
@@ -393,7 +362,6 @@ func TestIsSafeOperation(t *testing.T) {
 	}
 }
 
-// M38: subcommand typo detection must see past global flags.
 func TestAnalyzeSubcommandAfterGlobalFlags(t *testing.T) {
 	d := Analyze("git -c core.pager=cat statu")
 	if d == nil || d.Suggestion != "Did you mean 'status'?" {

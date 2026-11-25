@@ -18,8 +18,6 @@ func rowString(t *testing.T, term *Terminal, y int) string {
 	return text
 }
 
-// TestOSCDiscardOverflow: an OSC string longer than the 4096-rune buffer
-// must be swallowed up to its terminator, never printed as typed text.
 func TestOSCDiscardOverflow(t *testing.T) {
 	term := New(80, 24)
 	writeTerminal(t, term, "\x1b]0;"+strings.Repeat("x", 5000)+"\aOK")
@@ -27,14 +25,12 @@ func TestOSCDiscardOverflow(t *testing.T) {
 		t.Fatalf("over-long OSC leaked onto the screen: row 0 = %q", got)
 	}
 
-	// The truncated OSC must not have been executed as a title either.
 	select {
 	case title := <-term.TitleChan:
 		t.Fatalf("truncated OSC was executed as title %q", title)
 	default:
 	}
 
-	// A normal OSC afterwards still works.
 	writeTerminal(t, term, "\x1b]2;hello\a")
 	select {
 	case title := <-term.TitleChan:
@@ -64,7 +60,7 @@ func TestOSCDiscardOverflowCANTerminator(t *testing.T) {
 
 func TestOSCAtLimitStillWorks(t *testing.T) {
 	term := New(80, 24)
-	// Just under the limit: a normal OSC must still execute.
+
 	writeTerminal(t, term, "\x1b]2;"+strings.Repeat("a", 100)+"\a")
 	select {
 	case title := <-term.TitleChan:

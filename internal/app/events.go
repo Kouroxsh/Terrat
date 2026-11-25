@@ -157,9 +157,6 @@ func (a *App) executeSettingsAction(item render.PrefOption, isSecondaryAction bo
 }
 
 func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEventCh <-chan platform.Event) bool {
-	// L21: a window close request must be honoured even with no valid
-	// active tab — the tab guard below used to swallow it, so the window
-	// could not be closed via WM_DELETE_WINDOW at all in that state.
 	if _, isClose := ev.(platform.CloseRequestEvent); isClose {
 		return true
 	}
@@ -191,12 +188,6 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 		}
 		e = lastMotion
 
-		// A drag ends on ButtonRelease, not on a motion event: a motion
-		// generated before the press can arrive after it with no button
-		// in its state, and clearing the drag on it cancels the drag
-		// before it starts (the scrollbar thumb would never move).
-		// Only update while the button is held; a motion without it is
-		// ignored — stale, or released outside the window.
 		if a.isDraggingScrollbar {
 			if (e.State & platform.ButtonMask1) != 0 {
 				a.updateScrollbar(int(e.EventY))
@@ -236,8 +227,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 			isCtrl := (e.State & platform.ModCtrl) != 0
 			if isCtrl && int(e.EventY) >= render.HeaderHeight {
 				cx, cy := a.toCellCoords(int(e.EventX), int(e.EventY))
-				// L11: cy is a screen (viewport) row; when scrolled the
-				// visible row is a scrollback row, not grid row cy.
+
 				rowStr := activeTerm.GetViewportRowString(cy)
 				matches := urlRegex.FindAllStringIndex(rowStr, -1)
 				var foundURL *render.URLRange
@@ -374,13 +364,6 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 				return false
 			}
 
-			// Scrollbar first: its 5px thumb sits at the very right edge
-			// (width-7..width-2), fully inside the 8px resize margin
-			// below. If the resize check ran first, every press on the
-			// scrollbar would start a resize instead and the scrollbar
-			// could never be grabbed. The right edge below the header
-			// is therefore the scrollbar's; resizing still works from
-			// the bottom, left and top edges and the other corners.
 			if int(e.EventX) >= int(a.currentWidth)-16 && int(e.EventY) >= render.HeaderHeight {
 				if activeTerm.ScrollbackLen() > 0 {
 					a.isSelecting = false
@@ -399,8 +382,6 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 
 			if int(e.EventY) < render.HeaderHeight {
 				if int(e.EventX) >= int(a.currentWidth)-36 {
-					// L20: shut down via the Run loop (returning true)
-					// instead of os.Exit, so deferred cleanup runs.
 					a.Close()
 					return true
 				} else if int(e.EventX) >= int(a.currentWidth)-72 && int(e.EventX) < int(a.currentWidth)-36 {
@@ -641,9 +622,7 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 		}
 
 	case platform.KeyPressEvent:
-		// NB: application-cursor (SS3) sequences are produced by Translate
-		// itself now (M9): the window passes the active terminal's DECCKM
-		// state in, so no rewriting is needed here.
+
 		keysym := e.KeySym
 		data := string(e.Bytes)
 		action := e.Action
@@ -930,16 +909,10 @@ func (a *App) handleEvent(ev platform.Event, pendingEvent *platform.Event, xEven
 									a.updateDiagnostics()
 								}
 							} else if keysym == 0xff1b || (len(data) == 1 && (data[0] == 0x03 || data[0] == 0x15 || data[0] == 0x17 || data[0] == 0x0b || data[0] == 0x12)) {
-								// Esc / Ctrl-C / Ctrl-U / Ctrl-W / Ctrl-K /
-								// Ctrl-R all discard or rewrite the line.
 								a.currentInputBuffer = ""
 								a.activeGhostText = ""
 								a.activeDiag = nil
 							} else if keysym == 0xff09 || keysym == 0xff52 || keysym == 0xff54 {
-								// L16: Tab completion and history recall
-								// (Up/Down) rewrite the line in ways Terrat
-								// cannot track — drop the guess rather than
-								// suggesting from stale text.
 								a.currentInputBuffer = ""
 								a.activeGhostText = ""
 								a.activeDiag = nil

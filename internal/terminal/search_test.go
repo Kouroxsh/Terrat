@@ -23,7 +23,6 @@ func TestFindRowMatchesCaseInsensitive(t *testing.T) {
 }
 
 func TestFindRowMatchesUnicode(t *testing.T) {
-	// Multi-byte Unicode text; rune indices must match grid columns.
 	row := "你好世界 東南西北 你好世界"
 	matches := FindRowMatches(row, "你好世界")
 	if len(matches) != 2 {
@@ -57,9 +56,7 @@ func TestFindRowMatchesInTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("write failed: %v", err)
 	}
-	// 你好世界 occupies 8 grid columns (each CJK rune is 2 cells), so دنیا
-	// starts at grid column 14, not 10 as the old 1-cell-per-rune layout
-	// assumed. Search runs on the width-aware row text.
+
 	text, colMap := term.RowText(0)
 	matches := FindRowMatchesCols(text, colMap, "دنیا")
 	if len(matches) != 1 || matches[0].StartCol != 14 || matches[0].EndCol != 17 {

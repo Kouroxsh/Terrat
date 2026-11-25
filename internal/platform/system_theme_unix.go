@@ -11,12 +11,8 @@ import (
 	"time"
 )
 
-// probeTimeout bounds the whole system-theme detection (M30). Without it a
-// broken D-Bus could block dbus-send for its ~25s timeout (or longer) and
-// hang startup before the first window appears.
 const probeTimeout = 2 * time.Second
 
-// runProbe runs one external probe under the shared deadline.
 func runProbe(ctx context.Context, name string, args ...string) (string, bool) {
 	out, err := exec.CommandContext(ctx, name, args...).Output()
 	if err != nil {
@@ -25,11 +21,6 @@ func runProbe(ctx context.Context, name string, args ...string) (string, bool) {
 	return string(out), true
 }
 
-// DetectSystemColorScheme reports whether the system prefers a dark colour
-// scheme. The second result says whether the scheme is actually known: when
-// every probe fails or times out it returns (true, false) — dark remains the
-// fallback default, but callers can tell "unknown" apart from a real dark
-// preference (M30).
 func DetectSystemColorScheme() (dark bool, known bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 	defer cancel()

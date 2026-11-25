@@ -95,7 +95,6 @@ func TestSelectAll(t *testing.T) {
 		t.Fatalf("expected HasSelection to be true after SelectAll")
 	}
 
-	// Verify boundary cells
 	if !term.IsSelected(0, 0) {
 		t.Errorf("expected (0, 0) to be selected")
 	}
@@ -123,9 +122,8 @@ func TestWordSelectionReverseDrag(t *testing.T) {
 		term.lines[0][i] = Cell{Char: r}
 	}
 
-	// Double-click on 'banana' (starts at 6, ends at 11)
 	term.SelectWord(8, 0)
-	// Drag backwards to 'apple' (col 2, row 0)
+
 	term.UpdateSelection(2, 0)
 
 	selected := term.GetSelectedText()
@@ -138,7 +136,6 @@ func TestWordSelectionReverseDrag(t *testing.T) {
 func TestSelectAllWithScrollbackAndNoTrailingBlanks(t *testing.T) {
 	term := New(80, 10)
 
-	// Write 50 lines to create 40 lines of scrollback history and 10 lines in active grid
 	for i := 0; i < 50; i++ {
 		term.Write(fmt.Appendf(nil, "Line_%02d\r\n", i))
 	}
@@ -156,7 +153,6 @@ func TestSelectAllWithScrollbackAndNoTrailingBlanks(t *testing.T) {
 	text := term.GetSelectedText()
 	lines := strings.Split(text, "\n")
 
-	// Verify all 50 lines from scrollback to active grid are included
 	if len(lines) < 50 {
 		t.Fatalf("expected at least 50 lines selected, got %d lines", len(lines))
 	}
@@ -168,13 +164,11 @@ func TestSelectAllWithScrollbackAndNoTrailingBlanks(t *testing.T) {
 		t.Fatalf("expected line 49 to be 'Line_49', got %q", lines[49])
 	}
 
-	// Verify GetAllText produces the exact same complete output
 	allText := term.GetAllText()
 	if allText != text {
 		t.Fatalf("expected GetAllText to match GetSelectedText on SelectAll")
 	}
 
-	// Verify scrolling does not cancel SelectAll mode
 	term.Scroll(5)
 	if !term.HasSelection() {
 		t.Fatalf("expected selection to remain active after scrolling in SelectAll mode")
@@ -243,6 +237,3 @@ func TestSelectionScrollbackRange(t *testing.T) {
 		t.Fatalf("expected startY=4 endY=7, got startY=%d endY=%d", startY, endY)
 	}
 }
-
-
-

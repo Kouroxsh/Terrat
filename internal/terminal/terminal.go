@@ -34,13 +34,6 @@ type Terminal struct {
 	maxHistory   int
 	scrollOff    int
 
-	// Wrapped flags, parallel to the grids and the scrollback: wrapped[i]
-	// is true when row i is a continuation of the previous logical line
-	// (the line wrapped onto it). Search joins wrapped rows so a query
-	// spanning a wrap is found; every operation that moves rows must move
-	// these flags in lockstep (see scrollUp, reverseIndex, executeCSI,
-	// Resize). historyStoreWrapped is the reusable backing store for
-	// scrollbackWrapped, mirroring historyStore.
 	linesWrapped        []bool
 	altWrapped          []bool
 	scrollbackWrapped   []bool
@@ -92,9 +85,7 @@ type Terminal struct {
 	csiParams   []string
 	csiPrivate  bool
 	csiLeader   rune
-	// csiIntermediates collects CSI intermediate bytes (0x20-0x2F, e.g.
-	// the space in "CSI ! p") so they are not mistaken for the final
-	// byte (L2). Reset when a new CSI sequence starts.
+
 	csiIntermediates string
 	oscBuffer        []rune
 
@@ -108,8 +99,6 @@ type Terminal struct {
 }
 
 func New(cols, rows int) *Terminal {
-	// L10: zero/negative dimensions used to build empty grids that panicked
-	// on the first output; fall back to the classic 80x24 instead.
 	if cols <= 0 {
 		cols = 80
 	}
@@ -247,36 +236,18 @@ func (t *Terminal) BracketedPaste() bool {
 	return t.bracketedPaste
 }
 
-func (t *Terminal) AppCursorLocked() bool {
-	return t.appCursor
-}
-
-// AppCursor is the locking version of AppCursorLocked, for callers that do
-// not already hold t.mu (e.g. the UI event handlers in internal/app).
 func (t *Terminal) AppCursor() bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return t.appCursor
 }
 
-func (t *Terminal) MouseTrackingLocked() bool {
-	return t.mouseTracking
-}
-
-// MouseTracking is the locking version of MouseTrackingLocked, for callers
-// that do not already hold t.mu.
 func (t *Terminal) MouseTracking() bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return t.mouseTracking
 }
 
-func (t *Terminal) MouseSGRLocked() bool {
-	return t.mouseSGR
-}
-
-// MouseSGR is the locking version of MouseSGRLocked, for callers that do
-// not already hold t.mu.
 func (t *Terminal) MouseSGR() bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -309,10 +280,6 @@ func (t *Terminal) Rows() int {
 	return t.rows
 }
 
-// GetRowString returns the text of grid row y (grid coordinates: the
-// cursor row, the row a program wrote to). It is NOT viewport-relative:
-// when scrolled, the row visible at screen position y is a different row
-// — use GetViewportRowString for screen coordinates (L11).
 func (t *Terminal) GetRowString(y int) string {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -333,10 +300,6 @@ func (t *Terminal) GetRowString(y int) string {
 	return string(runes)
 }
 
-// GetViewportRowString returns the text of the row visible at screen row y,
-// applying the same scrollback mapping as GetCellLocked: when scrolled,
-// the top rows come from the scrollback. Callers with screen coordinates
-// (mouse hover, URL detection) must use this, not GetRowString (L11).
 func (t *Terminal) GetViewportRowString(y int) string {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -357,10 +320,6 @@ func (t *Terminal) GetViewportRowString(y int) string {
 	return string(runes)
 }
 
-// lowerRunes folds each rune individually. strings.ToLower can change
-// the rune count (e.g. 'İ' U+0130 lowercases to two runes "i̇"), which
-// would shift every column after it; per-rune folding keeps the rune
-// count — and therefore the column map — intact (L12).
 func lowerRunes(r []rune) []rune {
 	out := make([]rune, len(r))
 	for i, c := range r {
@@ -369,9 +328,6 @@ func lowerRunes(r []rune) []rune {
 	return out
 }
 
-// matchRunes reports whether query (already folded) matches text at
-// position x. Matches are non-overlapping: after a match the scan
-// continues past it instead of counting the same characters twice (L12).
 func matchAt(text, query []rune, x int) bool {
 	if x+len(query) > len(text) {
 		return false
@@ -384,17 +340,12 @@ func matchAt(text, query []rune, x int) bool {
 	return true
 }
 
-// SearchMatchInfo reports a match position inside the visible grid.
-// StartCol/EndCol are rune-based column indices (one rune per cell).
 type SearchMatchInfo struct {
 	Row      int
 	StartCol int
 	EndCol   int
 }
 
-// FindRowMatches returns match column ranges for a single row string that
-// contains exactly one rune per grid cell. Comparison is case-insensitive
-// and rune-based, so multi-byte characters align with grid columns.
 func FindRowMatches(rowStr, query string) []SearchMatchInfo {
 	if query == "" {
 		return nil
@@ -413,11 +364,6 @@ func FindRowMatches(rowStr, query string) []SearchMatchInfo {
 	return matches
 }
 
-// RowText returns the row's text with continuation cells skipped and
-// zero-width runes (Extra) included, plus a column map: colMap[i] is the
-// grid column of the i-th rune of the text. Unlike GetRowString (one rune
-// per cell), this is the text a user would copy, so it is what search runs
-// against when wide runes are present.
 func (t *Terminal) RowText(y int) (string, []int) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -446,7 +392,7 @@ func (t *Terminal) rowTextLocked(y int) (string, []int) {
 			colMap = append(colMap, x)
 		}
 	}
-	// Trailing blank cells are not text.
+
 	end := len(runes)
 	for end > 0 && runes[end-1] == ' ' {
 		end--
@@ -454,10 +400,6 @@ func (t *Terminal) rowTextLocked(y int) (string, []int) {
 	return string(runes[:end]), colMap[:end]
 }
 
-// FindRowMatchesCols is FindRowMatches for a row produced by RowText: it
-// matches against the text runes and translates the match back to grid
-// columns via colMap. EndCol covers the whole last matched cell (both
-// columns of a wide rune).
 func FindRowMatchesCols(text string, colMap []int, query string) []SearchMatchInfo {
 	if query == "" {
 		return nil
@@ -481,11 +423,6 @@ func FindRowMatchesCols(text string, colMap []int, query string) []SearchMatchIn
 	return matches
 }
 
-// rowTextOf extracts the text of one physical row: continuation cells are
-// skipped, zero-width runes (Extra) are included, and colMap[i] is the grid
-// column of the i-th rune. Trailing blank cells are NOT trimmed here — the
-// caller trims the end of a logical line, so a real space at a wrap point
-// survives joining.
 func rowTextOf(row []Cell) (string, []int) {
 	var runes []rune
 	var colMap []int
@@ -508,22 +445,12 @@ func rowTextOf(row []Cell) (string, []int) {
 	return string(runes), colMap
 }
 
-// AbsoluteSearchMatch is one physical row of a search match in the full
-// history (scrollback + grid). AbsRow counts from the oldest scrollback row
-// (0) through the grid rows; a match spanning wrapped rows is split into
-// one entry per physical row so the renderer can highlight each row.
 type AbsoluteSearchMatch struct {
 	AbsRow   int
 	StartCol int
 	EndCol   int
 }
 
-// FindMatches returns all case-insensitive matches of query in the full
-// history: the scrollback lines followed by the visible grid (or just the
-// alt grid when the alternate screen is active, which has no scrollback).
-// Lines wrapped across physical rows are joined, so a query spanning a
-// wrap is found; a match that spans rows is split into one entry per row.
-// At most 1000 entries are returned, oldest match first.
 func (t *Terminal) FindMatches(query string) []AbsoluteSearchMatch {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -561,13 +488,11 @@ func (t *Terminal) FindMatches(query string) []AbsoluteSearchMatch {
 	}
 
 	var matches []AbsoluteSearchMatch
-	// Accumulator for the logical line being built: per-rune grid column
-	// and absolute row, so matches map back to physical rows.
+
 	var lineRunes []rune
 	var lineCols []int
 	var lineRows []int
 	flush := func() {
-		// Only the end of a logical line is padding; trim it.
 		end := len(lineRunes)
 		for end > 0 && lineRunes[end-1] == ' ' {
 			end--
@@ -587,7 +512,7 @@ func (t *Terminal) FindMatches(query string) []AbsoluteSearchMatch {
 				x++
 				continue
 			}
-			// Split the match per physical row.
+
 			for s := x; s < x+len(q); {
 				row := lineRows[s]
 				e := s
@@ -660,12 +585,6 @@ func (t *Terminal) SetTheme(theme *Theme) {
 	t.currFGKind = ColorKindDefault
 	t.currBGKind = ColorKindDefault
 
-	// L6: remap by how the colour was specified, not by value matching.
-	// Palette entries (ANSI16/ANSI256) are re-resolved against the new
-	// theme; explicit RGB values and defaults are left exactly as they
-	// are — the old value-matching code demoted bright colours whenever
-	// two palette entries happened to share a value, and could remap an
-	// explicit RGB that coincided with a palette entry.
 	remap := func(c Color, kind ColorKind, idx int) Color {
 		switch kind {
 		case ColorKindANSI16:
@@ -697,16 +616,11 @@ func (t *Terminal) SetTheme(theme *Theme) {
 			remapCell(&t.scrollback[r][c])
 		}
 	}
-	// L7: the DECSC-saved colours are part of the terminal state too —
-	// they used to keep the old theme's values after a theme change.
+
 	t.savedFG = remap(t.savedFG, t.savedFGKind, t.savedFGIdx)
 	t.savedBG = remap(t.savedBG, t.savedBGKind, t.savedBGIdx)
 }
 
-// ansi256 resolves a 256-colour index against the active theme: indices
-// 0-15 are the theme palette, the rest are the standard xterm cube/greys.
-// Out-of-range indices are clamped instead of resetting the foreground
-// (L5); the old package-level ANSI256 ignored the active theme entirely.
 func (t *Terminal) ansi256(index int) Color {
 	if index < 0 {
 		index = 0
@@ -745,9 +659,6 @@ func (t *Terminal) activeGrid() [][]Cell {
 	return t.lines
 }
 
-// activeWrapped returns the wrapped flags parallel to the active grid.
-// The returned slice shares the grid's backing array, so in-place updates
-// to it move with the rows.
 func (t *Terminal) activeWrapped() []bool {
 	if t.isAlt {
 		return t.altWrapped
@@ -801,11 +712,7 @@ func (t *Terminal) ScrollKeepSelection(delta int) {
 		t.sel.StartY += actualDelta
 		t.sel.OrigStartY += actualDelta
 		t.sel.EndY += actualDelta
-		// Clamping Start/End independently used to collapse a multi-row
-		// selection into a single row when it scrolled past an edge.
-		// The selection now keeps its shape (out-of-view rows simply do
-		// not render); it is cleared only once it has scrolled entirely
-		// out of the viewport.
+
 		_, sY, _, eY := t.sel.Normalized()
 		if eY < 0 || sY >= t.rows {
 			t.sel.Active = false
@@ -855,8 +762,6 @@ func (t *Terminal) ResetScroll() {
 	}
 }
 
-// logicalLines joins physical rows into logical lines using the wrapped
-// flags: a row whose flag is set continues the previous line.
 func logicalLines(rows [][]Cell, wrapped []bool) [][]Cell {
 	var lines [][]Cell
 	for i, row := range rows {
@@ -871,19 +776,10 @@ func logicalLines(rows [][]Cell, wrapped []bool) [][]Cell {
 	return lines
 }
 
-// reflowLines re-splits logical lines into physical rows of width cols. A
-// wide rune is never split across a row boundary: if its lead cell would
-// be the last cell of a row, the pair moves to the next row. It returns
-// the rows and their wrapped flags (true for every row but the first of a
-// logical line).
 func reflowLines(lines [][]Cell, cols int) ([][]Cell, []bool) {
 	var rows [][]Cell
 	var wrapped []bool
 	for _, line := range lines {
-		// Drop trailing blank cells of the logical line: they are padding,
-		// and keeping them would grow the history with empty rows. Only
-		// exactly-empty cells are trimmed — a trailing space with a
-		// background colour or attributes is real content.
 		end := len(line)
 		for end > 0 && line[end-1].Equal(EmptyCell()) {
 			end--
@@ -903,13 +799,11 @@ func reflowLines(lines [][]Cell, cols int) ([][]Cell, []bool) {
 			if take > len(line) {
 				take = len(line)
 			}
-			// Do not leave a wide lead as the last cell of the row.
+
 			if take < len(line) && take > 0 && line[take-1].Wide {
 				take--
 			}
 			if take == 0 {
-				// A 1-column terminal cannot hold a wide rune at all;
-				// take the lead alone and let fixRowWide demote it.
 				take = 1
 			}
 			row := make([]Cell, cols)
@@ -937,18 +831,10 @@ func (t *Terminal) Resize(newCols, newRows int) {
 		return
 	}
 
-	// L9: reflow instead of truncating. Logical lines (scrollback + grid,
-	// joined via the wrapped flags) are re-split at the new width, so
-	// narrowing no longer drops text off the right edge and the scrollback
-	// is re-wrapped to the new width too. The newest rows stay on screen;
-	// older rows move into (or stay in) the scrollback, capped at
-	// maxHistory.
 	sbLines := logicalLines(t.scrollback, t.scrollbackWrapped)
 	gridLines := logicalLines(t.lines, t.linesWrapped)
 	allLines := sbLines
-	// A logical line can span the scrollback/grid boundary: when the
-	// first grid row is a wrapped continuation it belongs to the last
-	// scrollback line.
+
 	if len(gridLines) > 0 && len(t.linesWrapped) > 0 && t.linesWrapped[0] && len(allLines) > 0 {
 		allLines[len(allLines)-1] = append(allLines[len(allLines)-1], gridLines[0]...)
 		gridLines = gridLines[1:]
@@ -956,7 +842,6 @@ func (t *Terminal) Resize(newCols, newRows int) {
 	allLines = append(allLines, gridLines...)
 	reflowed, reflowedWrapped := reflowLines(allLines, newCols)
 
-	// Keep at most newRows on screen; the rest is scrollback.
 	var newScrollback [][]Cell
 	var newScrollbackWrapped []bool
 	if len(reflowed) > newRows {
@@ -983,8 +868,6 @@ func (t *Terminal) Resize(newCols, newRows int) {
 		}
 	}
 
-	// The alternate screen has no scrollback: reflow it on its own and
-	// keep only the newest rows.
 	altLines := logicalLines(t.altLines, t.altWrapped)
 	altReflowed, altReflowedWrapped := reflowLines(altLines, newCols)
 	if len(altReflowed) > newRows {
@@ -1013,8 +896,7 @@ func (t *Terminal) Resize(newCols, newRows int) {
 	t.altWrapped = newAltWrapped
 	t.scrollback = newScrollback
 	t.scrollbackWrapped = newScrollbackWrapped
-	// The history backing stores were built for the old widths; let
-	// scrollUp rebuild them lazily.
+
 	t.historyStore = nil
 	t.historyStoreWrapped = nil
 	if t.scrollOff > len(t.scrollback) {
@@ -1041,10 +923,6 @@ func (t *Terminal) Resize(newCols, newRows int) {
 	t.sel.Active = false
 }
 
-// isUTF8Prefix reports whether p could be the start of a valid rune
-// that was cut short by the end of the chunk: the first byte opens a
-// 2/3/4-byte sequence and every byte present so far is a valid
-// continuation byte. Anything else is invalid, not truncated (L14).
 func isUTF8Prefix(p []byte) bool {
 	if len(p) == 0 {
 		return false
@@ -1087,8 +965,7 @@ func (t *Terminal) Write(p []byte) (int, error) {
 				t.pendingUTF8 = append([]byte(nil), p[idx:]...)
 				break
 			}
-			// Invalid byte, not a truncated rune: show it as U+FFFD
-			// now instead of buffering it forever.
+
 			t.processRune(utf8.RuneError)
 			idx++
 			continue
@@ -1101,9 +978,6 @@ func (t *Terminal) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-// Flush emits a single U+FFFD for a truncated UTF-8 sequence still held
-// from the last Write (e.g. when the PTY closes mid-rune) instead of
-// silently dropping it (L14).
 func (t *Terminal) Flush() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -1123,7 +997,7 @@ func (t *Terminal) processRune(r rune) {
 			t.lineFeed()
 			t.wrapNext = false
 		case '\v', '\f':
-			// L3: vertical tab / form feed are line feeds, not no-ops.
+
 			t.lineFeed()
 			t.wrapNext = false
 		case '\r':
@@ -1143,8 +1017,7 @@ func (t *Terminal) processRune(r rune) {
 		case '\a':
 		case '\x00':
 		default:
-			// L3: DEL and the C1 controls (0x80-0x9F) are not printable;
-			// they used to reach putChar and show up as glyphs.
+
 			if r >= ' ' && r != 0x7f && !(r >= 0x80 && r <= 0x9f) {
 				t.putChar(r)
 			}
@@ -1198,9 +1071,6 @@ func (t *Terminal) processRune(r rune) {
 			return
 		}
 		if (r >= '0' && r <= '9') || r == ';' || r == ':' {
-			// L2: ':' is a sub-parameter separator (e.g. ESC[38:5:196m);
-			// treat it like ';' so the sequence parses instead of
-			// printing literally.
 			if len(t.csiParams) == 0 {
 				t.csiParams = append(t.csiParams, "")
 			}
@@ -1215,9 +1085,6 @@ func (t *Terminal) processRune(r rune) {
 			return
 		}
 		if r >= 0x20 && r <= 0x2f {
-			// L2: intermediate bytes (space, !, ", #, $, %, &, ', (, ),
-			// *, +, ,, -, ., /) are part of the sequence, not the final
-			// byte — collect them and keep parsing.
 			if len(t.csiIntermediates) < 8 {
 				t.csiIntermediates += string(r)
 			}
@@ -1242,17 +1109,13 @@ func (t *Terminal) processRune(r rune) {
 			if len(t.oscBuffer) < 4096 {
 				t.oscBuffer = append(t.oscBuffer, r)
 			} else {
-				// Over-long OSC: swallow the rest up to the terminator
-				// instead of dropping back to stateNormal, where the
-				// remainder would leak onto the screen as typed text.
 				t.oscBuffer = nil
 				t.state = stateOSCDiscard
 			}
 		}
 
 	case stateOSCDiscard:
-		// Discard the over-long sequence without executing it (its
-		// content was truncated) and without printing any of it.
+
 		switch r {
 		case '\a', '\x18', '\x1a':
 			t.state = stateNormal
@@ -1264,7 +1127,6 @@ func (t *Terminal) processRune(r rune) {
 		if r == '\\' {
 			t.state = stateNormal
 		} else {
-			// ESC starts a new sequence; reprocess this rune as an escape.
 			t.state = stateEscape
 			t.processRune(r)
 		}
@@ -1282,11 +1144,6 @@ func (t *Terminal) processRune(r rune) {
 }
 
 func (t *Terminal) putChar(r rune) {
-	// Zero-width runes (combining marks, ZWNJ/ZWJ, variation selectors)
-	// attach to the previous cell's grapheme and never advance the cursor;
-	// anything else zero-width (controls) is dropped.
-	// Width is computed once here and reused below: RuneWidth used to be
-	// called twice per rune.
 	w := RuneWidth(r)
 	if w == 0 {
 		if IsZeroWidthAttachable(r) {
@@ -1299,7 +1156,7 @@ func (t *Terminal) putChar(r rune) {
 		if t.autoWrap {
 			t.cursorX = 0
 			t.lineFeed()
-			// The new row continues the logical line that wrapped.
+
 			t.activeWrapped()[t.cursorY] = true
 		}
 		t.wrapNext = false
@@ -1307,8 +1164,6 @@ func (t *Terminal) putChar(r rune) {
 
 	grid := t.activeGrid()
 
-	// A wide rune that does not fit in the remaining columns wraps to the
-	// next line instead of being split across the edge.
 	if w == 2 && t.cursorX == t.cols-1 {
 		if t.autoWrap {
 			t.cursorX = 0
@@ -1321,10 +1176,6 @@ func (t *Terminal) putChar(r rune) {
 	}
 
 	if t.cursorY >= 0 && t.cursorY < t.rows && t.cursorX >= 0 && t.cursorX < t.cols {
-		// Overwriting half of a wide pair must clear the other half, or
-		// the grid would keep a dangling lead/continuation cell. Only
-		// wide leads and continuations need the check: normal cells are
-		// the overwhelming case, and the call costs ~7% of write time.
 		if c := grid[t.cursorY][t.cursorX]; c.Continuation || c.Wide {
 			t.clearWidePairAt(grid, t.cursorY, t.cursorX)
 		}
@@ -1363,9 +1214,6 @@ func (t *Terminal) putChar(r rune) {
 	}
 }
 
-// attachZeroWidth appends r to the grapheme of the cell just before the
-// cursor (the cell the previous character was written to), so the text
-// round-trips on copy/paste and search while the cursor stays put.
 func (t *Terminal) attachZeroWidth(r rune) {
 	grid := t.activeGrid()
 	if t.cursorY < 0 || t.cursorY >= t.rows || t.cursorX <= 0 {
@@ -1380,10 +1228,9 @@ func (t *Terminal) attachZeroWidth(r rune) {
 	}
 	prev := &grid[t.cursorY][x]
 	if prev.Char == 0 || prev.Char == ' ' {
-		return // nothing meaningful to attach to
+		return
 	}
-	// Copy on append: cells are copied by value on row shifts, so the
-	// backing array may be shared with another cell.
+
 	extra := prev.ExtraRunes()
 	attached := make([]rune, len(extra)+1)
 	copy(attached, extra)
@@ -1391,9 +1238,6 @@ func (t *Terminal) attachZeroWidth(r rune) {
 	prev.Extra = &attached
 }
 
-// clearWidePairAt clears both halves of a wide pair touching cell (y, x):
-// if the cell is a continuation, its lead is cleared too, and if it is a
-// wide lead, its continuation is cleared too.
 func (t *Terminal) clearWidePairAt(grid [][]Cell, y, x int) {
 	if y < 0 || y >= len(grid) || x < 0 || x >= len(grid[y]) {
 		return
@@ -1405,10 +1249,6 @@ func (t *Terminal) clearWidePairAt(grid [][]Cell, y, x int) {
 	}
 }
 
-// fixRowWide repairs dangling wide halves in a row (a lead cell whose
-// continuation is gone, or a continuation with no lead), e.g. after an
-// erase, insert/delete or resize cut a wide rune in half. A dangling lead
-// becomes a normal single cell; a dangling continuation becomes a space.
 func (t *Terminal) fixRowWide(row []Cell) {
 	for x := 0; x < len(row); x++ {
 		switch {
@@ -1425,10 +1265,6 @@ func (t *Terminal) fixRowWide(row []Cell) {
 }
 
 func (t *Terminal) lineFeed() {
-	// Only scroll when the cursor is exactly on the bottom of the scroll
-	// region. Below the region (e.g. under DECSTBM) the cursor just moves
-	// down, clamped to the last row — scrolling there would corrupt the
-	// content above, e.g. inside nano.
 	if t.cursorY == t.scrollBottom {
 		t.scrollUp(1)
 	} else if t.cursorY < t.rows-1 {
@@ -1443,15 +1279,13 @@ func (t *Terminal) scrollUp(count int) {
 	for c := 0; c < count; c++ {
 		recycled := grid[t.scrollTop]
 		if t.scrollTop == 0 && !t.isAlt && t.maxHistory > 0 {
-			// The top row (and its wrapped flag) leaves the grid for the
-			// scrollback; capture the flag before the shift below.
 			enteringWrapped := wrapped[0]
 			if len(t.scrollback) == t.maxHistory {
 				recycled = t.scrollback[0]
 			} else {
 				recycled = nil
 			}
-			// Compact the sliding history window into reusable storage.
+
 			if len(t.scrollback) == cap(t.scrollback) && len(t.scrollback) >= t.maxHistory {
 				if len(t.historyStore) != 2*t.maxHistory {
 					t.historyStore = make([][]Cell, 2*t.maxHistory)
@@ -1498,9 +1332,6 @@ func (t *Terminal) scrollUp(count int) {
 }
 
 func (t *Terminal) reverseIndex() {
-	// Only scroll when the cursor is exactly on the top of the scroll
-	// region. Above the region the cursor just moves up, clamped to the
-	// first row — mirroring lineFeed.
 	if t.cursorY == t.scrollTop {
 		grid := t.activeGrid()
 		wrapped := t.activeWrapped()
@@ -1577,8 +1408,7 @@ func (t *Terminal) executeCSI(cmd rune) {
 	}
 
 	grid := t.activeGrid()
-	// wrapped parallels grid row-for-row; every case below that moves rows
-	// must move these flags the same way.
+
 	wrapped := t.activeWrapped()
 
 	switch cmd {
@@ -1848,8 +1678,7 @@ func (t *Terminal) executeCSI(cmd rune) {
 	case 'r':
 		top := arg(0, 1) - 1
 		bottom := arg(1, t.rows) - 1
-		// L8: a single-line region (top == bottom, e.g. ESC[5;5r) is
-		// valid; only an inverted region resets to the full screen.
+
 		if top >= 0 && bottom < t.rows && top <= bottom {
 			t.scrollTop = top
 			t.scrollBottom = bottom
@@ -1960,8 +1789,6 @@ func (t *Terminal) executeCSI(cmd rune) {
 	}
 }
 
-// clampByte clamps an SGR colour component to 0-255 (L4): converting
-// with byte() used to wrap, so 300 became 44.
 func clampByte(v int) byte {
 	if v < 0 {
 		return 0
@@ -1977,9 +1804,6 @@ func (t *Terminal) executeSGR(args []int) {
 		args = []int{0}
 	}
 
-	// setFG/setBG record both the resolved colour and how it was
-	// specified, so a later theme change can remap palette colours while
-	// leaving explicit RGB alone (L6).
 	setFG := func(c Color, kind ColorKind, idx int) {
 		t.currFG, t.currFGKind, t.currFGIdx = c, kind, idx
 	}
@@ -2060,8 +1884,7 @@ func (t *Terminal) executeOSC() {
 				}
 			}
 			sanitized := sb.String()
-			// L1: truncate by runes — a byte cut could split a
-			// multi-byte rune in half and corrupt the title.
+
 			if r := []rune(sanitized); len(r) > 256 {
 				sanitized = string(r[:256])
 			}

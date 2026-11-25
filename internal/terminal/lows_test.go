@@ -6,10 +6,9 @@ import (
 	"unicode/utf8"
 )
 
-// L1: OSC title truncation must be rune-based, not byte-based.
 func TestLowOSCTitleRuneTruncation(t *testing.T) {
 	term := New(80, 24)
-	long := strings.Repeat("é", 300) // 2 bytes per rune
+	long := strings.Repeat("é", 300)
 	_, _ = term.Write([]byte("\x1b]2;" + long + "\x07"))
 	if got := len([]rune(term.title)); got != 256 {
 		t.Fatalf("title truncated to %d runes, want 256", got)
@@ -19,12 +18,11 @@ func TestLowOSCTitleRuneTruncation(t *testing.T) {
 	}
 }
 
-// L2: ':' is a CSI sub-parameter separator; intermediate bytes are not final.
 func TestLowCSIColonSubParameters(t *testing.T) {
 	term := New(80, 24)
 	_, _ = term.Write([]byte("\x1b[38:5:196mX"))
 	cell := term.GetCell(0, 0)
-	// 196 -> cube: idx 180 -> r=255, g=0, b=0.
+
 	if cell.FG != RGB(255, 0, 0) {
 		t.Fatalf("colon SGR 38:5:196 gave FG %06x, want ff0000", uint32(cell.FG))
 	}
@@ -36,8 +34,7 @@ func TestLowCSIIntermediateBytes(t *testing.T) {
 	if _, _, vis := term.Cursor(); vis {
 		t.Fatalf("cursor should be hidden after CSI ? 25 l")
 	}
-	// The space is an intermediate byte, not the final byte: the sequence
-	// must still execute (show cursor) and the 'h' must not print.
+
 	_, _ = term.Write([]byte("\x1b[?25 h"))
 	if _, _, vis := term.Cursor(); !vis {
 		t.Fatalf("cursor should be visible after CSI ? 25 SP h")
@@ -47,12 +44,10 @@ func TestLowCSIIntermediateBytes(t *testing.T) {
 	}
 }
 
-// L3: VT/FF are line feeds; DEL and C1 controls print nothing.
 func TestLowVerticalTabFormFeed(t *testing.T) {
 	term := New(80, 24)
 	_, _ = term.Write([]byte("a\vb\fc"))
-	// LF moves down but keeps the column (like \n), so b/c land in
-	// column 1, not 0.
+
 	if got := strings.TrimSpace(term.GetRowString(0)); got != "a" {
 		t.Fatalf("row 0 = %q, want a", got)
 	}
@@ -67,14 +62,13 @@ func TestLowVerticalTabFormFeed(t *testing.T) {
 func TestLowDELAndC1Dropped(t *testing.T) {
 	term := New(80, 24)
 	_, _ = term.Write([]byte("a\x7fb"))
-	term.processRune(0x85) // C1 control, fed as a rune
+	term.processRune(0x85)
 	_, _ = term.Write([]byte("c"))
 	if got := strings.TrimRight(term.GetRowString(0), " "); got != "abc" {
 		t.Fatalf("row 0 = %q, want abc (DEL/C1 dropped)", got)
 	}
 }
 
-// L4: truecolour components clamp instead of wrapping (byte(300) was 44).
 func TestLowTrueColourClamps(t *testing.T) {
 	term := New(80, 24)
 	_, _ = term.Write([]byte("\x1b[38;2;300;400;500mX"))
@@ -83,8 +77,6 @@ func TestLowTrueColourClamps(t *testing.T) {
 	}
 }
 
-// L5/L6: 256-colour indices resolve through the active theme, and a theme
-// change remaps palette colours but leaves explicit RGB alone.
 func TestLowThemeRemapByKind(t *testing.T) {
 	term := New(80, 24)
 	_, _ = term.Write([]byte("\x1b[31mA\x1b[38;2;10;20;30mB\x1b[38;5;200mC"))
@@ -99,13 +91,12 @@ func TestLowThemeRemapByKind(t *testing.T) {
 	if got := term.GetCell(1, 0).FG; got != RGB(10, 20, 30) {
 		t.Fatalf("explicit RGB changed across themes: %06x, want 0a141e", uint32(got))
 	}
-	// 256-colour cube entries are theme-independent.
+
 	if got := term.GetCell(2, 0).FG; got != term.ansi256(200) {
 		t.Fatalf("ANSI256 200 = %06x, want %06x", uint32(got), uint32(term.ansi256(200)))
 	}
 }
 
-// L7: DECSC-saved colours are remapped by a theme change too.
 func TestLowSavedCursorColoursRemapped(t *testing.T) {
 	term := New(80, 24)
 	_, _ = term.Write([]byte("\x1b[31m\x1b7"))
@@ -116,7 +107,6 @@ func TestLowSavedCursorColoursRemapped(t *testing.T) {
 	}
 }
 
-// L8: a single-line scroll region (ESC[5;5r) is valid.
 func TestLowSingleLineScrollRegion(t *testing.T) {
 	term := New(80, 24)
 	_, _ = term.Write([]byte("\x1b[5;5r"))
@@ -125,7 +115,6 @@ func TestLowSingleLineScrollRegion(t *testing.T) {
 	}
 }
 
-// L9: resize reflows instead of truncating.
 func TestLowResizeReflows(t *testing.T) {
 	term := New(10, 5)
 	_, _ = term.Write([]byte("0123456789ABCDEFGHIJ"))
@@ -142,7 +131,6 @@ func TestLowResizeReflows(t *testing.T) {
 	}
 }
 
-// L10: New(0, 0) must not panic on first output.
 func TestLowNewZeroSize(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -156,20 +144,17 @@ func TestLowNewZeroSize(t *testing.T) {
 	}
 }
 
-// L12: case folding must not shift columns; matches do not overlap.
 func TestLowSearchFoldingAndOverlap(t *testing.T) {
 	if got := FindRowMatches("aaa", "aa"); len(got) != 1 {
 		t.Fatalf("overlapping matches counted: %+v", got)
 	}
-	// 'İ' (U+0130) lowercases to two runes with strings.ToLower; per-rune
-	// folding keeps the column map intact.
+
 	matches := FindRowMatches("İİ", "i")
 	if len(matches) != 2 || matches[0].StartCol != 0 || matches[1].StartCol != 1 {
 		t.Fatalf("folded matches = %+v, want cols 0 and 1", matches)
 	}
 }
 
-// L13: copying a wrapped line must not insert a newline at the wrap.
 func TestLowCopyJoinsWrappedRows(t *testing.T) {
 	term := New(5, 5)
 	_, _ = term.Write([]byte("hello world"))
@@ -178,7 +163,6 @@ func TestLowCopyJoinsWrappedRows(t *testing.T) {
 	}
 }
 
-// L14: invalid UTF-8 bytes flush as U+FFFD; a truncated prefix flushes on Flush().
 func TestLowInvalidUTF8Flushes(t *testing.T) {
 	term := New(80, 24)
 	_, _ = term.Write([]byte{0xff})
@@ -186,7 +170,7 @@ func TestLowInvalidUTF8Flushes(t *testing.T) {
 		t.Fatalf("invalid byte rendered as %U, want U+FFFD", got)
 	}
 	term2 := New(80, 24)
-	_, _ = term2.Write([]byte{0xE2, 0x82}) // truncated '€'
+	_, _ = term2.Write([]byte{0xE2, 0x82})
 	if got := strings.TrimRight(term2.GetRowString(0), " "); got != "" {
 		t.Fatalf("truncated rune printed early: %q", got)
 	}
@@ -196,7 +180,6 @@ func TestLowInvalidUTF8Flushes(t *testing.T) {
 	}
 }
 
-// L15: scrolling a selection out of view clears it instead of collapsing it.
 func TestLowScrollKeepSelectionNoCollapse(t *testing.T) {
 	term := New(80, 24)
 	for i := 0; i < 30; i++ {

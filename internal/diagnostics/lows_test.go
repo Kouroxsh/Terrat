@@ -7,27 +7,25 @@ import (
 	"testing"
 )
 
-// L22: a bare privileged command that only prints usage needs no sudo.
 func TestNeedsRootBareCommands(t *testing.T) {
 	for _, cmd := range []string{"apt", "apt-get", "pacman", "dnf", "yum", "ufw", "fdisk", "mkfs", "iptables", "useradd", "userdel", "groupadd"} {
 		if needsRoot(cmd, []string{cmd}) {
 			t.Errorf("needsRoot(%q, bare) = true, want false (prints usage)", cmd)
 		}
 	}
-	// With an actual operation the warning must stay.
+
 	for _, parts := range [][]string{
 		{"apt", "install", "x"},
 		{"ufw", "enable"},
 		{"fdisk", "/dev/sda"},
 		{"apt", "--version"},
 	} {
-		// --version is not an operation: it prints version info only.
 		want := parts[1] != "--version"
 		if got := needsRoot(parts[0], parts); got != want {
 			t.Errorf("needsRoot(%q) = %v, want %v", parts, got, want)
 		}
 	}
-	// reboot/poweroff/shutdown act with no arguments, so they still warn.
+
 	for _, cmd := range []string{"reboot", "poweroff", "shutdown"} {
 		if !needsRoot(cmd, []string{cmd}) {
 			t.Errorf("needsRoot(%q, bare) = false, want true (acts with no args)", cmd)
@@ -35,7 +33,6 @@ func TestNeedsRootBareCommands(t *testing.T) {
 	}
 }
 
-// L23: short subcommand typos must be suggested.
 func TestShortSubcommandTypos(t *testing.T) {
 	cases := []struct{ input, want string }{
 		{"git plu", "Did you mean 'pull'?"},
@@ -49,13 +46,12 @@ func TestShortSubcommandTypos(t *testing.T) {
 			t.Fatalf("Analyze(%q) = %+v, want suggestion %q", c.input, d, c.want)
 		}
 	}
-	// A single letter is still not a typo suggestion.
+
 	if d := Analyze("git a"); d != nil {
 		t.Fatalf("expected nil for 'git a', got %+v", d)
 	}
 }
 
-// L24: Windows-only commands must no longer be silently suppressed.
 func TestWindowsOnlyCommandsNotSuppressed(t *testing.T) {
 	for _, cmd := range []string{"winget", "ipconfig", "cmd", "cls", "dir"} {
 		if commonBaseSet[cmd] {
@@ -70,7 +66,6 @@ func TestWindowsOnlyCommandsNotSuppressed(t *testing.T) {
 	}
 }
 
-// L25: `qui` must not suggest the nonexistent `quit`.
 func TestQuiDoesNotSuggestQuit(t *testing.T) {
 	if fix, ok := commonTypos["qui"]; ok {
 		t.Fatalf("commonTypos still maps 'qui' to %q", fix)
@@ -80,7 +75,6 @@ func TestQuiDoesNotSuggestQuit(t *testing.T) {
 	}
 }
 
-// L26: an empty quoted string is an argument.
 func TestEmptyQuotedStringIsAToken(t *testing.T) {
 	cases := []struct {
 		input string
@@ -104,14 +98,12 @@ func TestEmptyQuotedStringIsAToken(t *testing.T) {
 			}
 		}
 	}
-	// `"" gti` must NOT report a git typo: the shell fails on the empty
-	// command name and never runs `gti`.
+
 	if d := Analyze(`"" gti`); d != nil {
 		t.Fatalf("expected nil for '\"\" gti', got %+v", d)
 	}
 }
 
-// L27: separators inside $(...), ${...} and backquotes do not split.
 func TestSeparatorsInsideSubstitution(t *testing.T) {
 	for _, input := range []string{
 		"echo $(foo; gti)",
@@ -127,11 +119,11 @@ func TestSeparatorsInsideSubstitution(t *testing.T) {
 			t.Fatalf("LexCommandLine(%q).ActiveSegment = %q, want the whole line", input, lex.ActiveSegment)
 		}
 	}
-	// A real separator after the substitution still splits.
+
 	if lex := LexCommandLine("echo $(foo; bar); gti"); lex.ActiveSegment != "gti" {
 		t.Fatalf("expected active segment %q, got %q", "gti", lex.ActiveSegment)
 	}
-	// No bogus typo (and no corrupting quick fix) from inside a substitution.
+
 	if d := Analyze("echo $(foo; gti)"); d != nil {
 		t.Fatalf("expected nil for 'echo $(foo; gti)', got %+v", d)
 	}
@@ -140,13 +132,12 @@ func TestSeparatorsInsideSubstitution(t *testing.T) {
 	}
 }
 
-// L28: alias parsing — tab after `alias`, more files, long lines.
 func TestAliasLineTabSeparator(t *testing.T) {
 	RegisterAliasFromLine("alias\tlltab='ls -la'")
 	if !IsAlias("lltab") {
 		t.Fatalf("expected tab-separated alias to be registered")
 	}
-	// A word merely starting with "alias" is not an alias definition.
+
 	RegisterAliasFromLine("aliasfoo=bar")
 	if IsAlias("aliasfoo") {
 		t.Fatalf("expected 'aliasfoo=bar' not to register an alias")
@@ -157,8 +148,6 @@ func TestLoadAliasesFromMoreFiles(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 
-	// Aliases spread over the files L28 adds, including a fish conf.d
-	// snippet and one line longer than the old 64KB scanner limit.
 	longVal := strings.Repeat("x", 100*1024)
 	if err := os.WriteFile(filepath.Join(dir, ".bash_profile"), []byte("alias bp='echo bp'\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -178,7 +167,7 @@ func TestLoadAliasesFromMoreFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".config", "fish", "conf.d", "mine.fish"), []byte("alias ff='echo ff'\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// A >64KB line must not abort the scan: the alias after it must load.
+
 	if err := os.WriteFile(filepath.Join(dir, ".bashrc"), []byte("alias big='"+longVal+"'\nalias afterbig='echo after'\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +181,6 @@ func TestLoadAliasesFromMoreFiles(t *testing.T) {
 	}
 }
 
-// Damerau: a transposition costs 1, so short transposed typos match.
 func TestDamerauLevenshteinDistance(t *testing.T) {
 	cases := []struct {
 		s, tc string
@@ -212,7 +200,7 @@ func TestDamerauLevenshteinDistance(t *testing.T) {
 			t.Errorf("DamerauLevenshteinDistance(%q, %q) = %d, want %d", c.s, c.tc, got, c.want)
 		}
 	}
-	// Tie-break: `rn` is a subsequence of `run` but not of `rm`.
+
 	if got := FindClosestMatch("rn", []string{"rm", "run"}, 1); got != "run" {
 		t.Fatalf("FindClosestMatch(rn, [rm run]) = %q, want %q", got, "run")
 	}

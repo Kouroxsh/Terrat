@@ -2,8 +2,6 @@ package terminal
 
 import "testing"
 
-// TestPutCharWideOccupiesTwoCells is the core H2 regression test: a wide
-// rune takes two grid columns and the following text lands after it.
 func TestPutCharWideOccupiesTwoCells(t *testing.T) {
 	term := New(80, 24)
 	if _, err := term.Write([]byte("世界ab")); err != nil {
@@ -33,8 +31,6 @@ func TestPutCharWideOccupiesTwoCells(t *testing.T) {
 	}
 }
 
-// TestPutCharZWNJDoesNotAdvance verifies the Persian ZWNJ (U+200C) takes
-// no cell: "می‌کنم" is 5 columns, and the ZWNJ survives in the extracted text.
 func TestPutCharZWNJDoesNotAdvance(t *testing.T) {
 	term := New(80, 24)
 	if _, err := term.Write([]byte("می‌کنم")); err != nil {
@@ -47,15 +43,13 @@ func TestPutCharZWNJDoesNotAdvance(t *testing.T) {
 	if got := term.GetAllText(); got != "می‌کنم" {
 		t.Fatalf("GetAllText() = %q, want %q (ZWNJ must round-trip)", got, "می‌کنم")
 	}
-	// The ZWNJ is stored on the preceding cell's grapheme.
+
 	cell := term.GetCell(1, 0)
 	if len(cell.ExtraRunes()) != 1 || cell.ExtraRunes()[0] != '\u200c' {
 		t.Fatalf("cell 1 Extra = %U, want [U+200C]", cell.ExtraRunes())
 	}
 }
 
-// TestPutCharCombiningMarkAttaches verifies a combining mark does not
-// create a cell of its own and is preserved in the extracted text.
 func TestPutCharCombiningMarkAttaches(t *testing.T) {
 	term := New(80, 24)
 	if _, err := term.Write([]byte("e\u0301x")); err != nil {
@@ -70,8 +64,6 @@ func TestPutCharCombiningMarkAttaches(t *testing.T) {
 	}
 }
 
-// TestPutCharWideWrapsAtEdge: a wide rune that does not fit in the last
-// column wraps to the next line instead of being split.
 func TestPutCharWideWrapsAtEdge(t *testing.T) {
 	term := New(4, 2)
 	if _, err := term.Write([]byte("abc世")); err != nil {
@@ -88,8 +80,6 @@ func TestPutCharWideWrapsAtEdge(t *testing.T) {
 	}
 }
 
-// TestPutCharWideExactFit: a wide rune that exactly fills the last two
-// columns stays on the line; the next character wraps.
 func TestPutCharWideExactFit(t *testing.T) {
 	term := New(4, 2)
 	if _, err := term.Write([]byte("ab世x")); err != nil {
@@ -103,7 +93,6 @@ func TestPutCharWideExactFit(t *testing.T) {
 	}
 }
 
-// TestEmojiOccupiesTwoCells verifies emoji advance the cursor by two.
 func TestEmojiOccupiesTwoCells(t *testing.T) {
 	term := New(80, 24)
 	if _, err := term.Write([]byte("a😀b")); err != nil {
@@ -118,7 +107,6 @@ func TestEmojiOccupiesTwoCells(t *testing.T) {
 	}
 }
 
-// TestRowTextWideSearch: searching a wide word finds it at grid columns.
 func TestRowTextWideSearch(t *testing.T) {
 	term := New(80, 24)
 	if _, err := term.Write([]byte("世界ab世界")); err != nil {
@@ -138,15 +126,13 @@ func TestRowTextWideSearch(t *testing.T) {
 	if matches[1].StartCol != 6 || matches[1].EndCol != 9 {
 		t.Fatalf("unexpected second match: %+v", matches[1])
 	}
-	// A query spanning the wide/narrow boundary still maps correctly.
+
 	matches = FindRowMatchesCols(text, colMap, "界ab")
 	if len(matches) != 1 || matches[0].StartCol != 2 || matches[0].EndCol != 5 {
 		t.Fatalf("unexpected boundary match: %+v", matches)
 	}
 }
 
-// TestSelectedTextWide verifies copy of a selection covering wide runes
-// returns each wide rune once, not once per cell.
 func TestSelectedTextWide(t *testing.T) {
 	term := New(80, 24)
 	if _, err := term.Write([]byte("世界ab")); err != nil {
@@ -157,7 +143,7 @@ func TestSelectedTextWide(t *testing.T) {
 	if got := term.GetSelectedText(); got != "世界ab" {
 		t.Fatalf("GetSelectedText() = %q, want %q", got, "世界ab")
 	}
-	// Selecting only the two cells of the first wide rune still copies it once.
+
 	term.StartSelection(0, 0)
 	term.UpdateSelection(1, 0)
 	if got := term.GetSelectedText(); got != "世" {
@@ -165,15 +151,12 @@ func TestSelectedTextWide(t *testing.T) {
 	}
 }
 
-// TestEraseCutsWideRune: erasing half of a wide rune must not leave a
-// dangling lead or continuation behind.
 func TestEraseCutsWideRune(t *testing.T) {
 	term := New(80, 24)
 	if _, err := term.Write([]byte("a世b")); err != nil {
 		t.Fatalf("write failed: %v", err)
 	}
-	// Erase from the continuation cell (col 2) to the end of the line:
-	// the lead at col 1 must lose its Wide flag.
+
 	if _, err := term.Write([]byte("\x1b[1;3H\x1b[0K")); err != nil {
 		t.Fatalf("write failed: %v", err)
 	}
@@ -185,14 +168,12 @@ func TestEraseCutsWideRune(t *testing.T) {
 	}
 }
 
-// TestWordBoundsWide: double-clicking the second half of a wide rune
-// selects the whole rune.
 func TestWordBoundsWide(t *testing.T) {
 	term := New(80, 24)
 	if _, err := term.Write([]byte("a世b")); err != nil {
 		t.Fatalf("write failed: %v", err)
 	}
-	// Simulate a word double-click on the continuation cell (col 2).
+
 	term.SelectWord(2, 0)
 	if got := term.GetSelectedText(); got != "a世b" {
 		t.Fatalf("GetSelectedText() = %q, want %q", got, "a世b")

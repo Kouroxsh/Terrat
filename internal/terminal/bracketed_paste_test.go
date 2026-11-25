@@ -11,7 +11,6 @@ func TestBracketedPasteMode(t *testing.T) {
 		t.Fatalf("expected initial bracketedPaste to be false, got true")
 	}
 
-	// Enable bracketed paste: CSI ? 2004 h
 	_, err := term.Write([]byte("\x1b[?2004h"))
 	if err != nil {
 		t.Fatalf("unexpected write error: %v", err)
@@ -20,7 +19,6 @@ func TestBracketedPasteMode(t *testing.T) {
 		t.Fatalf("expected bracketedPaste to be true after \\x1b[?2004h")
 	}
 
-	// Disable bracketed paste: CSI ? 2004 l
 	_, err = term.Write([]byte("\x1b[?2004l"))
 	if err != nil {
 		t.Fatalf("unexpected write error: %v", err)

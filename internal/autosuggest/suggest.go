@@ -75,10 +75,6 @@ func NewEngine() *Engine {
 		maxItems: 2000,
 	}
 
-	// M24: load the real shell history first (most recent first), then the
-	// built-in defaults as fallback. The old order put the defaults first,
-	// so `git st` ghosted `atus` from the default `git status` instead of
-	// the user's own `git stash` from history.
 	e.loadShellHistory()
 	for _, cmd := range defaultCommonCommands {
 		e.addCommandInternal(cmd)
@@ -87,8 +83,6 @@ func NewEngine() *Engine {
 	return e
 }
 
-// isTimestampLine reports whether line is a bare `#<digits>` history
-// timestamp (bash HISTTIMEFORMAT), e.g. `#1600000000`.
 func isTimestampLine(line string) bool {
 	if len(line) < 2 || line[0] != '#' {
 		return false
@@ -101,25 +95,15 @@ func isTimestampLine(line string) bool {
 	return true
 }
 
-// maxHistoryFileBytes caps how much of a history file is read (L30):
-// history files are append-only, so the most recent entries live at the
-// end — reading a 50MB .zsh_history in full on every startup just to
-// keep the newest 2000 lines was pure waste.
-const maxHistoryFileBytes = 2 << 20 // 2 MiB tail
+const maxHistoryFileBytes = 2 << 20
 
-// maxHistoryLineBytes caps a single history line (L30): the default
-// bufio.Scanner cap is 64KB, so one very long one-liner truncated the
-// scan and silently dropped every entry below it.
-const maxHistoryLineBytes = 1 << 20 // 1 MiB
+const maxHistoryLineBytes = 1 << 20
 
-// newHistoryScanner returns a scanner over file, positioned at the last
-// maxHistoryFileBytes when the file is larger, so only the recent tail
-// is read. The first line after the seek is partial and skipped.
 func newHistoryScanner(file *os.File) *bufio.Scanner {
 	if info, err := file.Stat(); err == nil && info.Size() > maxHistoryFileBytes {
 		if _, err := file.Seek(info.Size()-maxHistoryFileBytes, io.SeekStart); err == nil {
 			br := bufio.NewReader(file)
-			_, _ = br.ReadString('\n') // skip partial first line
+			_, _ = br.ReadString('\n')
 			scanner := bufio.NewScanner(br)
 			scanner.Buffer(make([]byte, 64*1024), maxHistoryLineBytes)
 			return scanner
@@ -130,12 +114,6 @@ func newHistoryScanner(file *os.File) *bufio.Scanner {
 	return scanner
 }
 
-// parseZshExtended extracts the command from a zsh extended-history line
-// (": <begin>:<elapsed>;<command>"). ok=false when the line is not in
-// extended format — a plain command starting with ":" (the no-op builtin)
-// must not be mistaken for one. An empty command after the ";" reports
-// ok=true with cmd="" so the caller skips the entry instead of
-// suggesting the raw ": ..." line (L31).
 func parseZshExtended(line string) (cmd string, ok bool) {
 	if !strings.HasPrefix(line, ": ") {
 		return "", false
@@ -182,10 +160,7 @@ func (e *Engine) loadShellHistory() {
 		lines := list.New()
 		entries := make(map[string]*list.Element)
 		isZsh := strings.HasSuffix(hf, ".zsh_history")
-		// An entry under assembly: in zsh extended history a new entry
-		// always starts with ": <ts>:<dur>;", so any other line is a
-		// continuation of the current multiline entry (L31) and must be
-		// joined to it instead of suggested as a fragment.
+
 		var curEntry string
 		hasCur := false
 		flush := func() {
@@ -211,19 +186,17 @@ func (e *Engine) loadShellHistory() {
 			raw := scanner.Text()
 			line := strings.TrimSpace(raw)
 			if line == "" {
-				// A blank line inside a multiline zsh entry belongs to it.
 				if isZsh && hasCur {
 					curEntry += "\n"
 				}
 				continue
 			}
-			// M27: bash HISTTIMEFORMAT timestamps look like `#1600000000`
-			// and must never be suggested as commands.
+
 			if isTimestampLine(line) {
 				flush()
 				continue
 			}
-			// Handle zsh extended history format: ": 1600000000:0;cmd"
+
 			if cmd, ok := parseZshExtended(line); ok {
 				flush()
 				if cmd != "" {
@@ -233,8 +206,6 @@ func (e *Engine) loadShellHistory() {
 				continue
 			}
 			if isZsh && hasCur {
-				// Continuation line: keep the raw line (indentation
-				// included) so the entry stays whole.
 				curEntry += "\n" + raw
 				continue
 			}
@@ -246,7 +217,6 @@ func (e *Engine) loadShellHistory() {
 		_ = scanner.Err()
 		_ = file.Close()
 
-		// Read in reverse (most recent commands first)
 		for entry := lines.Back(); entry != nil; entry = entry.Prev() {
 			e.addCommandInternal(entry.Value.(string))
 			if len(e.history) >= e.maxItems {
@@ -268,7 +238,6 @@ func (e *Engine) addCommandInternal(cmd string) {
 	e.history = append(e.history, cmd)
 }
 
-// Add learns a new command executed by the user.
 func (e *Engine) Add(cmd string) {
 	cmd = strings.TrimSpace(cmd)
 	if cmd == "" || len(cmd) < 2 {
@@ -298,12 +267,6 @@ func (e *Engine) Add(cmd string) {
 	e.history[0] = cmd
 }
 
-// foldPrefixLen returns the byte index in s just past the runes that
-// case-fold-match prefix, or -1 when prefix is not a case-insensitive
-// prefix of s. It folds rune by rune (unicode.ToLower): slicing by
-// len(prefix) bytes is wrong when folding changes byte lengths —
-// strings.ToLower("İ") is two runes ("i̇"), so cmd[len(input):] could cut
-// a rune in half and produce invalid UTF-8 in the ghost suffix (L32).
 func foldPrefixLen(s, prefix string) int {
 	si, pi := 0, 0
 	for pi < len(prefix) {
@@ -321,28 +284,22 @@ func foldPrefixLen(s, prefix string) int {
 	return si
 }
 
-// Suggest returns the ghost suffix (continuation) for the given input prefix.
-// If cwd is provided, it prioritizes local file/directory path completion (including paths with spaces).
-// Otherwise or as fallback, it searches command history.
 func (e *Engine) Suggest(input string, cwd ...string) string {
 	if len(input) < 1 {
 		return ""
 	}
 
-	// 1. Try local filesystem path completion if cwd is provided
 	if len(cwd) > 0 && cwd[0] != "" {
 		if pathSuffix := suggestPath(input, cwd[0]); pathSuffix != "" {
 			return pathSuffix
 		}
 	}
 
-	// 2. Fall back to command history
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
 	for _, cmd := range e.history {
 		if idx := foldPrefixLen(cmd, input); idx >= 0 && idx < len(cmd) {
-			// Return suffix preserving original case of the match.
 			return cmd[idx:]
 		}
 	}
@@ -350,7 +307,6 @@ func (e *Engine) Suggest(input string, cwd ...string) string {
 	return ""
 }
 
-// dirCacheTTL bounds how stale a directory listing can be (L33).
 const dirCacheTTL = time.Second
 
 type dirCacheEntry struct {
@@ -363,9 +319,6 @@ var (
 	dirCache   = map[string]dirCacheEntry{}
 )
 
-// cachedReadDir returns a directory listing, reusing one read less than a
-// second ago. suggestPath runs on every keystroke; without this, a large
-// directory was re-read from disk per keystroke for the same prefix.
 func cachedReadDir(dir string) ([]os.DirEntry, error) {
 	dirCacheMu.Lock()
 	if ent, ok := dirCache[dir]; ok && time.Now().Before(ent.expires) {
@@ -379,7 +332,6 @@ func cachedReadDir(dir string) ([]os.DirEntry, error) {
 	}
 	dirCacheMu.Lock()
 	if len(dirCache) > 128 {
-		// Bound the cache: drop everything rather than tracking LRU.
 		dirCache = map[string]dirCacheEntry{}
 	}
 	dirCache[dir] = dirCacheEntry{entries: entries, expires: time.Now().Add(dirCacheTTL)}
@@ -387,12 +339,6 @@ func cachedReadDir(dir string) ([]os.DirEntry, error) {
 	return entries, nil
 }
 
-// expandTilde replaces a leading ~, ~/ or ~user[/...] with the absolute
-// home directory (L29). A bare ~ expands to the home directory with a
-// trailing slash so it lists its contents, like ~/. An unknown user (or
-// no home) leaves the token unchanged, so completion falls through to
-// the normal path logic and finds nothing instead of completing from
-// the wrong directory.
 func expandTilde(token string) string {
 	if token == "" || token[0] != '~' {
 		return token
@@ -421,13 +367,11 @@ func expandTilde(token string) string {
 	return token
 }
 
-// suggestPath checks the active directory for matching files or folders (supporting spaces and quotes)
 func suggestPath(input string, cwd string) string {
 	if cwd == "" || len(input) == 0 {
 		return ""
 	}
 
-	// Check if input looks like a command with arguments or a path
 	inDouble := false
 	inSingle := false
 	escaped := false
@@ -466,7 +410,6 @@ func suggestPath(input string, cwd string) string {
 
 	rawToken := input[lastTokenStart:]
 
-	// Determine quote mode
 	isQuoted := false
 	quoteChar := byte(0)
 	cleanToken := rawToken
@@ -480,7 +423,6 @@ func suggestPath(input string, cwd string) string {
 		}
 	}
 
-	// Unescape if unquoted (e.g. "my\ " -> "my ")
 	var unescapedToken strings.Builder
 	for i := 0; i < len(cleanToken); i++ {
 		if cleanToken[i] == '\\' && !isQuoted && i+1 < len(cleanToken) && (cleanToken[i+1] == ' ' || cleanToken[i+1] == '\t' || cleanToken[i+1] == '"' || cleanToken[i+1] == '\'') {
@@ -492,35 +434,21 @@ func suggestPath(input string, cwd string) string {
 	}
 	pathToSearch := unescapedToken.String()
 
-	// M26: don't path-complete the command word itself (the first token)
-	// unless it looks like a path — otherwise typing `do` in a directory
-	// containing docker-compose.yml suggests a file instead of the `docker`
-	// command from history.
 	if lastTokenStart == 0 && !isQuoted && !strings.ContainsAny(cleanToken, "/~.") {
 		return ""
 	}
 
-	// L29: expand a leading ~ / ~/ / ~user first, so the directory
-	// and base below are computed from the real path. The old code
-	// special-cased ~ and ~/ in the branches and never resolved ~user
-	// at all; a bare ~ also set basePart "" without listDir, so it
-	// never matched anything.
 	searchPath := expandTilde(pathToSearch)
 
-	// Split directory and base using Linux path separators.
 	normPath := searchPath
 	dirPart := filepath.Dir(normPath)
 	basePart := filepath.Base(normPath)
 
-	// listDir is set only when the token ends in `/`: the user named a
-	// directory and wants its first entry, not a completion of the name.
 	listDir := false
 	searchDir := cwd
 	if strings.HasSuffix(searchPath, "/") {
 		listDir = true
-		// M25: a token ending in `/` names a directory — complete *inside*
-		// it (empty base) instead of completing the directory's own name
-		// (`cd /usr/` used to suggest `/`, and `cd ../` nothing at all).
+
 		dir := strings.TrimSuffix(searchPath, "/")
 		if dir == "" {
 			dir = "/"
@@ -544,7 +472,6 @@ func suggestPath(input string, cwd string) string {
 		basePart = searchPath
 	}
 
-	// L33: one listing per directory per second, not one per keystroke.
 	entries, err := cachedReadDir(searchDir)
 	if err != nil {
 		return ""
@@ -553,11 +480,9 @@ func suggestPath(input string, cwd string) string {
 	for _, entry := range entries {
 		name := entry.Name()
 		if strings.HasPrefix(name, ".") && !strings.HasPrefix(basePart, ".") {
-			continue // Skip hidden files unless explicitly requested
+			continue
 		}
 
-		// L32: the suffix starts at the rune boundary foldPrefixLen
-		// returns, not at len(basePart) bytes.
 		if idx := foldPrefixLen(name, basePart); (len(basePart) > 0 || listDir) && idx >= 0 {
 			suffix := name[idx:]
 			dirSep := "/"
@@ -572,14 +497,11 @@ func suggestPath(input string, cwd string) string {
 				return suffix + string(quoteChar)
 			}
 
-			// In unquoted mode on Unix, spaces in suffix must be escaped
 			suffix = strings.ReplaceAll(suffix, " ", "\\ ")
 			return suffix
 		}
 	}
 
-	// Also check if the user typed an unescaped space at the end, e.g. "cd my "
-	// where the folder name contains a space ("my space folder")
 	if !isQuoted && len(rawToken) == 0 && lastTokenStart > 1 && input[lastTokenStart-1] == ' ' {
 		prevTokenStart := strings.LastIndexAny(strings.TrimRight(input[:lastTokenStart-1], " \t"), " \t")
 		var prevToken string
@@ -592,7 +514,7 @@ func suggestPath(input string, cwd string) string {
 			target := prevToken + " "
 			for _, entry := range entries {
 				name := entry.Name()
-				// L32: rune-boundary suffix, as above.
+
 				if idx := foldPrefixLen(name, target); idx >= 0 {
 					suffix := name[idx:]
 					dirSep := "/"

@@ -142,14 +142,12 @@ func TestScrollKeepSelection(t *testing.T) {
 		t.Fatalf("expected selection to be active")
 	}
 
-	// Scroll up 2 lines keeping selection
 	term.ScrollKeepSelection(2)
 
 	if !term.HasSelection() {
 		t.Fatalf("expected selection to remain active after ScrollKeepSelection")
 	}
 
-	// Selection start row should have shifted from 5 to 7
 	term.mu.RLock()
 	startY := term.sel.StartY
 	origStartY := term.sel.OrigStartY
@@ -159,7 +157,6 @@ func TestScrollKeepSelection(t *testing.T) {
 		t.Fatalf("expected startY to be 7, got startY=%d origStartY=%d", startY, origStartY)
 	}
 
-	// Scroll down 1 line
 	term.ScrollKeepSelection(-1)
 	term.mu.RLock()
 	startY = term.sel.StartY
@@ -201,76 +198,66 @@ func TestSetScrollOff(t *testing.T) {
 func TestEditorAlternateScreenAndMargins(t *testing.T) {
 	term := New(80, 24)
 
-	// Shell output before launching editor
 	term.Write([]byte("user@box:~$ nano myfile.txt\r\n"))
 	initialScrollback := term.ScrollbackLen()
 
-	// Nano enters alternate screen and restricts scroll margin
 	term.Write([]byte("\x1b[?1049h"))
 	if !term.IsAlt() {
 		t.Fatalf("expected alt screen to be active")
 	}
 
-	// Nano sets top/bottom margins (e.g. lines 2 to 22)
 	term.Write([]byte("\x1b[2;22r"))
-	// Nano writes content and scrolls within its window
+
 	for i := 0; i < 50; i++ {
 		term.Write(fmt.Appendf(nil, "editor content line %d\r\n", i))
 	}
 
-	// In alternate screen, scrollback must NOT grow!
 	if term.ScrollbackLen() != initialScrollback {
 		t.Fatalf("scrollback increased inside alternate screen: before %d, now %d", initialScrollback, term.ScrollbackLen())
 	}
 
-	// Nano exits: leaves alternate screen
 	term.Write([]byte("\x1b[?1049l"))
 	if term.IsAlt() {
 		t.Fatalf("expected alt screen to be inactive after exit")
 	}
 
-	// Margins must be restored to full terminal (0 to 23), not trapped in nano's 2..22
 	if term.scrollTop != 0 || term.scrollBottom != 23 {
 		t.Fatalf("scroll margins were not reset upon exiting alt screen: top=%d, bottom=%d", term.scrollTop, term.scrollBottom)
 	}
 
-	// Subsequent shell outputs should not push unexpected garbage or be clipped
 	term.Write([]byte("user@box:~$ echo hello\r\n"))
 }
 
 func TestEditorCSICommands(t *testing.T) {
 	term := New(80, 24)
 
-	// Test VPA (CSI d)
 	term.Write([]byte("\x1b[10d"))
 	_, y, _ := term.Cursor()
 	if y != 9 {
 		t.Fatalf("expected cursor Y to be 9 after CSI 10d, got %d", y)
 	}
 
-	// Test ICH (CSI @) and ECH (CSI X)
 	term.Write([]byte("\x1b[1;1HABCDEF"))
-	term.Write([]byte("\x1b[1;3H\x1b[2@")) // Insert 2 spaces at col 3 (0-indexed 2)
+	term.Write([]byte("\x1b[1;3H\x1b[2@"))
 	rowStr := term.GetRowString(0)
 	if !strings.HasPrefix(rowStr, "AB  CD") {
 		t.Fatalf("expected row to start with 'AB  CD' after ICH, got %q", rowStr[:10])
 	}
 
-	term.Write([]byte("\x1b[1;1H\x1b[2X")) // Erase 2 characters at col 1
+	term.Write([]byte("\x1b[1;1H\x1b[2X"))
 	rowStr = term.GetRowString(0)
 	if !strings.HasPrefix(rowStr, "    CD") {
 		t.Fatalf("expected row to start with '    CD' after ECH, got %q", rowStr[:10])
 	}
 
-	// Test SU (CSI S) and SD (CSI T)
 	term.Write([]byte("\x1b[1;1HTOP_LINE\r\nSECOND_LINE"))
-	term.Write([]byte("\x1b[1S")) // Scroll up 1
+	term.Write([]byte("\x1b[1S"))
 	r0 := term.GetRowString(0)
 	if !strings.HasPrefix(r0, "SECOND_LINE") {
 		t.Fatalf("expected row 0 to be 'SECOND_LINE' after SU, got %q", r0[:15])
 	}
 
-	term.Write([]byte("\x1b[1T")) // Scroll down 1
+	term.Write([]byte("\x1b[1T"))
 	r1 := term.GetRowString(1)
 	if !strings.HasPrefix(r1, "SECOND_LINE") {
 		t.Fatalf("expected row 1 to be 'SECOND_LINE' after SD, got %q", r1[:15])
@@ -280,10 +267,8 @@ func TestEditorCSICommands(t *testing.T) {
 func TestOSCStringTerminatorST(t *testing.T) {
 	term := New(80, 24)
 
-	// Send OSC 0 title terminated by standard ST (ESC \)
 	term.Write([]byte("\x1b]0;TerraTerminal Test\x1b\\"))
 
-	// Verify title was received
 	select {
 	case title := <-term.TitleChan:
 		if title != "TerraTerminal Test" {
@@ -293,7 +278,6 @@ func TestOSCStringTerminatorST(t *testing.T) {
 		t.Fatalf("expected title event on TitleChan")
 	}
 
-	// Verify no stray backslash was printed on row 0
 	row0 := term.GetRowString(0)
 	if strings.Contains(row0, "\\") {
 		t.Fatalf("stray backslash detected on screen after OSC ST: %q", row0)
@@ -303,10 +287,8 @@ func TestOSCStringTerminatorST(t *testing.T) {
 func TestDeviceStatusReportCPR(t *testing.T) {
 	term := New(80, 24)
 
-	// Move cursor to row 5, col 12 (1-based: 5, 12)
 	term.Write([]byte("\x1b[5;12H"))
 
-	// Send DSR query for cursor position
 	term.Write([]byte("\x1b[6n"))
 
 	select {
@@ -323,14 +305,14 @@ func TestDeviceStatusReportCPR(t *testing.T) {
 func TestCursorNextPrevLine(t *testing.T) {
 	term := New(80, 24)
 
-	term.Write([]byte("\x1b[5;10H")) // cursor at row 4, col 9 (0-indexed)
-	term.Write([]byte("\x1b[2E"))    // move down 2 lines and to col 0
+	term.Write([]byte("\x1b[5;10H"))
+	term.Write([]byte("\x1b[2E"))
 	x, y, _ := term.Cursor()
 	if x != 0 || y != 6 {
 		t.Fatalf("expected cursor at (0, 6) after CSI 2E, got (%d, %d)", x, y)
 	}
 
-	term.Write([]byte("\x1b[1F")) // move up 1 line and to col 0
+	term.Write([]byte("\x1b[1F"))
 	x, y, _ = term.Cursor()
 	if x != 0 || y != 5 {
 		t.Fatalf("expected cursor at (0, 5) after CSI 1F, got (%d, %d)", x, y)

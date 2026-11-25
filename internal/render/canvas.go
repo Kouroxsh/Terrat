@@ -32,10 +32,6 @@ type TabHitBox struct {
 }
 
 type SearchMatch struct {
-	// Row is the absolute row number in the terminal's full history: 0 is
-	// the oldest scrollback row and len(scrollback)+y is grid row y (in the
-	// alternate screen, which has no scrollback, it is just the grid row).
-	// The canvas converts it to a viewport row when rendering.
 	Row      int
 	StartCol int
 	EndCol   int
@@ -215,8 +211,6 @@ func NewCanvas(fe *FontEngine) *Canvas {
 	}
 }
 
-// maxCanvasDimension caps the framebuffer size: without it a single huge
-// ConfigureNotify (e.g. 65535x65535) would allocate ~17 GB and OOM the app.
 const maxCanvasDimension = 16384
 
 func (c *Canvas) Resize(width, height int) {
@@ -275,7 +269,7 @@ func (c *Canvas) setPixel(x, y int, pixel uint32) {
 	}
 }
 
-func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string, hudInfo string, tabs []TabInfo, searchMatches []SearchMatch, activeSearchIdx int, hoveredURL *URLRange, ghostText string, diag *DiagnosticInfo) {
+func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, hudInfo string, tabs []TabInfo, searchMatches []SearchMatch, activeSearchIdx int, hoveredURL *URLRange, ghostText string, diag *DiagnosticInfo) {
 	term.RLock()
 	defer term.RUnlock()
 
@@ -305,10 +299,6 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 		DrawHLine(c.Pixels, c.Stride, 0, HeaderHeight-1, c.Width, headerLinePixel)
 	}
 
-	// L62: HeaderHeight is fixed (34) but charH grows with the font
-	// size, so (HeaderHeight-charH)/2 goes negative for large fonts
-	// and the header text draws above the visible area. Clamp to 0:
-	// the text then starts at the header's top edge instead.
 	titleY := max(0, (HeaderHeight-charH)/2)
 	c.TabHitBoxes = c.TabHitBoxes[:0]
 	c.NewTabHitBox = [4]int{0, 0, 0, 0}
@@ -490,10 +480,7 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 			clear(c.searchHighlights)
 		}
 		highlights = c.searchHighlights
-		// Search matches carry absolute row numbers; convert to viewport
-		// rows so scrolling never invalidates them. In the alternate
-		// screen there is no scrollback, so the absolute row is the grid
-		// row already.
+
 		sbLen := 0
 		if !term.IsAltLocked() {
 			sbLen = term.ScrollbackLenLocked()
@@ -522,9 +509,6 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 			cell := term.GetCellLocked(x, y)
 			cellX := gridStartX + (x * charW)
 
-			// The second half of a wide rune is painted by the lead cell's
-			// double-width glyph; nothing to draw here (unless the cursor
-			// sits on it, in which case just the cursor block).
 			if cell.Continuation {
 				if x == renderCurX && y == effectiveCurY && effectiveCurY < c.rows && curVis && cursorBlink {
 					if isMC {
@@ -601,7 +585,7 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 						DrawGlyphBlit(c.Pixels, c.Stride, cellX, cellY, mask, fgPixel, bgPixel, false, baseline)
 					}
 					if cell.Wide {
-						x++ // skip the continuation cell
+						x++
 					}
 					continue
 				} else {
@@ -638,7 +622,7 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 				DrawGlyphBlit(c.Pixels, c.Stride, cellX, cellY, mask, fgPixel, bgPixel, cell.Underline || isHoveredURL, baseline)
 			}
 			if cell.Wide {
-				x++ // skip the continuation cell, already painted by the wide glyph
+				x++
 			}
 		}
 	}
@@ -681,8 +665,7 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 
 		tipPadX := 10
 		tipPadY := 4
-		// L45: the message starts with "💡 " and may contain "•",
-		// so a byte length overstates the tooltip width.
+
 		tipW := displayWidth(diagMsg)*charW + tipPadX*2
 		tipH := charH + tipPadY*2
 
@@ -750,7 +733,6 @@ func (c *Canvas) Render(term *terminal.Terminal, cursorBlink bool, title string,
 type PrefOption struct {
 	ID       string
 	Label    string
-	Sublabel string
 	Value    string
 	IsToggle bool
 	Enabled  bool
@@ -762,8 +744,6 @@ func (c *Canvas) RenderPreferencesModal(th *terminal.Theme, selectedIdx int, opt
 
 	maxChars := 28
 	for _, opt := range options {
-		// L45: labels/values can hold non-ASCII text (e.g. a shell
-		// path); byte lengths would oversize the modal.
 		l := displayWidth(opt.Label) + 4
 		if opt.IsToggle {
 			l += 8
@@ -794,9 +774,7 @@ func (c *Canvas) RenderPreferencesModal(th *terminal.Theme, selectedIdx int, opt
 		if modalH > c.Height-HeaderHeight-10 {
 			modalH = c.Height - HeaderHeight - 10
 		}
-		// L46: on a tiny window the clamps above can go negative
-		// (c.Width < 20, or a header taller than the window); a
-		// negative size makes the hit-boxes and drawing nonsense.
+
 		modalW = max(1, modalW)
 		modalH = max(1, modalH)
 
@@ -887,8 +865,7 @@ func (c *Canvas) RenderPreferencesModal(th *terminal.Theme, selectedIdx int, opt
 	modalH = headerH + 4 + len(options)*rowH + 8 + footerH
 	modalW = min(modalW, c.Width-20)
 	modalH = min(modalH, c.Height-HeaderHeight-10)
-	// L46: see the minecraft branch above — the clamps can go
-	// negative on a tiny window.
+
 	modalW = max(1, modalW)
 	modalH = max(1, modalH)
 	modalX = max(6, c.Width-modalW-12)
@@ -986,31 +963,25 @@ func (c *Canvas) RenderSearchBar(th *terminal.Theme, query string, matchIdx, tot
 	if barW > c.Width-40 {
 		barW = c.Width - 40
 	}
-	// L46: on a tiny window c.Width-40 goes negative; keep the bar
-	// at least 1px wide and inside the canvas.
+
 	barW = max(1, barW)
 	barX = c.Width - barW - 20
 	if barX < 0 {
 		barX = 0
 	}
 	barY = HeaderHeight + 8
-	// L46: on a window shorter than the header the bar starts below
-	// the canvas entirely; pull it up so the returned box stays
-	// inside the canvas.
+
 	if barY >= c.Height {
 		barY = max(0, c.Height-1)
 	}
-	// L46: the bar is 34px tall but the window may be shorter than
-	// HeaderHeight+8+34; shrink it to fit instead of drawing past
-	// the canvas bottom.
+
 	if barY+barH > c.Height {
 		barH = c.Height - barY
 	}
 	if barH < 1 {
 		barH = 1
 	}
-	// L62: barH is fixed (34) but charH grows with the font size;
-	// clamp like titleY so the text stays inside the bar.
+
 	barTextY := barY + max(0, (barH-charH)/2)
 
 	if th.ID == "minecraft" {
@@ -1095,16 +1066,10 @@ func (c *Canvas) RenderSearchBar(th *terminal.Theme, query string, matchIdx, tot
 	return barX, barY, barW, barH
 }
 
-// displayWidth returns the number of cells s occupies in the UI font:
-// one per rune. len(s) counts bytes, which overstates the width of any
-// multi-byte text and misplaces anything positioned from it (L45).
 func displayWidth(s string) int {
 	return utf8.RuneCountInString(s)
 }
 
-// truncateQueryEnd keeps the last maxRunes runes of q so the tail of a
-// long search query stays visible. Slicing by bytes (the old code)
-// could cut a multi-byte rune in half and draw invalid UTF-8.
 func truncateQueryEnd(q string, maxRunes int) string {
 	if maxRunes <= 0 {
 		return ""

@@ -138,7 +138,6 @@ func TestPortableConfigTakesPrecedenceOverXDG(t *testing.T) {
 	}
 }
 
-// M21: one mistyped field must not discard the whole config.
 func TestLoadKeepsValidFieldsOnBadField(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "terrat-config-test-*")
 	if err != nil {
@@ -173,7 +172,6 @@ func TestLoadKeepsValidFieldsOnBadField(t *testing.T) {
 	}
 }
 
-// M21: a completely corrupt config is backed up and defaults are used.
 func TestLoadCorruptConfigBackedUp(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "terrat-config-test-*")
 	if err != nil {
@@ -208,7 +206,6 @@ func TestLoadCorruptConfigBackedUp(t *testing.T) {
 	}
 }
 
-// M20: Save must not leave a temp file behind and must write valid JSON.
 func TestSaveAtomicNoTempLeftBehind(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "terrat-config-test-*")
 	if err != nil {

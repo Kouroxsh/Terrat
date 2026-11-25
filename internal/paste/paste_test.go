@@ -69,7 +69,6 @@ func TestSanitizeZeroWidthNonJoiner(t *testing.T) {
 	}
 }
 
-// M22: C1 controls must be stripped — U+009B is a single-byte CSI.
 func TestSanitizeC1Controls(t *testing.T) {
 	res := Sanitize("ls\u009b31mfoo\u009c")
 	if res.Sanitized != "ls31mfoo" {
@@ -80,8 +79,6 @@ func TestSanitizeC1Controls(t *testing.T) {
 	}
 }
 
-// M23: Arabic Letter Mark, invisible operators, Mongolian vowel separator
-// and combining grapheme joiner must be stripped.
 func TestSanitizeInvisibleUnicodeExtended(t *testing.T) {
 	res := Sanitize("a\u061Cb\u2061c\u2064d\u180Ee\u034Ff")
 	if res.Sanitized != "abcdef" {

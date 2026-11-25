@@ -49,33 +49,20 @@ type Window struct {
 	clipMu        sync.RWMutex
 	clipboardText string
 	primaryText   string
-	// clipboardTime/primaryTime are the X timestamps the selections were
-	// acquired with (H12): the TIMESTAMP target reports when the current
-	// owner took the selection.
+
 	clipboardTime xproto.Timestamp
 	primaryTime   xproto.Timestamp
 
-	// lastEventTime is the X timestamp of the most recent user event
-	// (M31). Selection ownership is claimed with it instead of
-	// CurrentTime, so a claim can never be undone by a competing client
-	// that acted after our last event.
 	lastEventTime atomic.Uint32
 
-	// incrMu guards the INCR transfer state below.
 	incrMu sync.Mutex
-	// incrOut tracks selection transfers we are serving as the owner:
-	// keyed by requestor window + property, each holding the data still
-	// to send. Entries are removed when the transfer completes.
+
 	incrOut map[incrTransferKey]*incrOutState
-	// incrIn tracks an incremental paste we are receiving as requestor.
+
 	incrIn *incrInState
 
-	// pasteMu guards pastePending below. RequestPaste runs on the app
-	// goroutine, HandleSelectionNotify on the event-loop goroutine.
 	pasteMu sync.Mutex
-	// pastePending tracks a paste conversion in flight so a failed
-	// target can be retried with a plainer one (L43). Nil when no
-	// paste is outstanding.
+
 	pastePending *pasteRequest
 
 	pixmap        xproto.Pixmap
@@ -86,29 +73,17 @@ type Window struct {
 
 	keyHandler *KeyHandler
 
-	// AppCursorFunc, when set, reports whether the active terminal is in
-	// application-cursor mode (DECCKM). The event loop passes it to
-	// Translate so arrow/home/end keys produce SS3 sequences (M9); without
-	// it Translate always assumed normal-cursor mode and its SS3 branches
-	// were dead code. It is called from the event-loop goroutine, so it
-	// must be safe for concurrent use (the app backs it with an atomic
-	// pointer to the active terminal).
 	AppCursorFunc func() bool
 
-	// AltScreenFunc, when set, reports whether the active terminal is on
-	// the alternate screen. Translate needs it so Shift+PgUp/PgDn/Home/End
-	// reach fullscreen apps (vim, less) instead of scrolling the terminal
-	// (L42). Same concurrency contract as AppCursorFunc.
 	AltScreenFunc func() bool
 	eventCh       chan Event
 
-	// done is closed by Close to tell the event loop to exit.
 	done chan struct{}
-	// loopDone is closed by the event loop when it returns.
+
 	loopDone chan struct{}
-	// closeOnce makes Close idempotent.
+
 	closeOnce sync.Once
-	// closeEventsOnce guards the single close of eventCh.
+
 	closeEventsOnce sync.Once
 }
 
@@ -146,10 +121,7 @@ func NewWindow(title string, width, height uint16, iconPath string, iconData []b
 			xproto.EventMaskPointerMotion |
 			xproto.EventMaskButtonMotion |
 			xproto.EventMaskPropertyChange |
-			// KeymapStateMask: the server sends KeymapNotify when the
-			// keyboard layout changes (setxkbmap, desktop switcher),
-			// which is how the app learns the map changed — see the
-			// KeymapNotifyEvent case below.
+
 			xproto.EventMaskKeymapState,
 	)
 
@@ -319,8 +291,6 @@ func NewWindow(title string, width, height uint16, iconPath string, iconData []b
 
 	cursorFontId, err := xproto.NewFontId(X)
 	if err != nil {
-		// L62: a missing cursor font used to fail silently, leaving
-		// the app with no cursors at all and no hint why.
 		fmt.Fprintf(os.Stderr, "terrat: failed to allocate cursor font id: %v\n", err)
 	} else if err := xproto.OpenFontChecked(X, cursorFontId, uint16(len("cursor")), "cursor").Check(); err != nil {
 		fmt.Fprintf(os.Stderr, "terrat: failed to open cursor font: %v\n", err)
@@ -356,7 +326,6 @@ func NewWindow(title string, width, height uint16, iconPath string, iconData []b
 	w.SetTitle(title)
 
 	if len(iconData) > 0 {
-		// L60: a corrupt icon used to fail silently; log it instead.
 		if err := SetWindowIconBytes(X, winId, iconData); err != nil {
 			fmt.Fprintf(os.Stderr, "terrat: failed to set window icon: %v\n", err)
 		}
@@ -371,8 +340,6 @@ func NewWindow(title string, width, height uint16, iconPath string, iconData []b
 	_ = xproto.MapWindowChecked(X, winId).Check()
 	X.Sync()
 
-	// M10: a keyboard that fails to initialise must fail window creation
-	// loudly instead of leaving the app with a silently dead keyboard.
 	kh, err := NewKeyHandler(X)
 	if err != nil {
 		X.Close()
@@ -398,10 +365,7 @@ func (w *Window) SetTitle(title string) {
 			[]byte(title),
 		)
 	}
-	// L62: WM_NAME is a STRING property (Latin-1). Writing raw UTF-8
-	// bytes into it shows as mojibake in legacy WMs and pagers, so
-	// the legacy property gets a lossy Latin-1 conversion while
-	// _NET_WM_NAME above keeps the exact UTF-8 title.
+
 	latin1 := toLatin1(title)
 	_ = xproto.ChangeProperty(
 		w.X,
@@ -415,9 +379,6 @@ func (w *Window) SetTitle(title string) {
 	)
 }
 
-// toLatin1 converts s to Latin-1, replacing runes the encoding cannot
-// represent — and the C1 controls, which must not appear in a STRING
-// property — with '?'.
 func toLatin1(s string) []byte {
 	out := make([]byte, 0, len(s))
 	for _, r := range s {
@@ -472,9 +433,7 @@ func (w *Window) StartResize(direction int, rootX, rootY int16) {
 	if w.AtomNetWmMoveresize == 0 || direction < 0 || direction > 8 {
 		return
 	}
-	// L62: root coordinates are screen positions and cannot be negative;
-	// casting a negative int16 straight to uint32 would send a huge
-	// coordinate to the window manager.
+
 	if rootX < 0 {
 		rootX = 0
 	}
@@ -583,11 +542,6 @@ func (w *Window) SetMinSize(minW, minH uint32) {
 	)
 }
 
-// maxPutImageBytes is the largest PutImage payload: the X protocol
-// guarantees every server accepts requests up to 64 KiB, so the pixel
-// data plus the ~24-byte request header must fit in it. The old code
-// budgeted the full 65536 bytes for data alone and, when one row
-// exceeded it, sent the whole row in a single PutImage anyway.
 const maxPutImageBytes = 65536 - 32
 
 func (w *Window) Blit(pixels []byte, width, height uint16) {
@@ -619,10 +573,6 @@ func (w *Window) Blit(pixels []byte, width, height uint16) {
 	stride := int(width) * 4
 	h := int(height)
 	if stride > maxPutImageBytes {
-		// One row alone exceeds the request limit (width > ~16k px):
-		// split rows horizontally into single-row PutImage calls.
-		// (The canvas caps width at 16384, so this path is a safety
-		// net, not something a normal window reaches.)
 		maxCols := maxPutImageBytes / 4
 		for y := 0; y < h; y++ {
 			for x0 := 0; x0 < int(width); x0 += maxCols {
@@ -696,13 +646,10 @@ func (w *Window) Blit(pixels []byte, width, height uint16) {
 	w.X.Sync()
 }
 
-// closeEvents closes the event channel exactly once. App.Run treats a
-// closed channel as the signal to exit.
 func (w *Window) closeEvents() {
 	w.closeEventsOnce.Do(func() { close(w.eventCh) })
 }
 
-// sendEvent delivers ev unless the window is closing.
 func (w *Window) sendEvent(ev Event) bool {
 	select {
 	case w.eventCh <- ev:
@@ -714,17 +661,13 @@ func (w *Window) sendEvent(ev Event) bool {
 
 func (w *Window) Close() {
 	w.closeOnce.Do(func() {
-		// Tell the event loop to exit, then unblock it: closing the X
-		// connection makes the blocked WaitForEvent fail, and the loop
-		// closes the event channel and returns.
 		close(w.done)
 		w.X.Close()
 		select {
 		case <-w.loopDone:
 		case <-time.After(2 * time.Second):
 		}
-		// Best-effort cleanup of server-side resources; the X server
-		// reclaims the window, pixmap and GC when the client disconnects.
+
 		if w.pixmap != 0 {
 			_ = xproto.FreePixmap(w.X, w.pixmap)
 			w.pixmap = 0
@@ -734,8 +677,6 @@ func (w *Window) Close() {
 	})
 }
 
-// incrChunkSize is the largest chunk sent in one INCR step: comfortably
-// below the X request-length limit, so a chunk can never fail for size.
 const incrChunkSize = 64 * 1024
 
 type incrTransferKey struct {
@@ -744,14 +685,11 @@ type incrTransferKey struct {
 }
 
 type incrOutState struct {
-	data      []byte // bytes still to send
+	data      []byte
 	target    xproto.Atom
 	chunkSize int
 }
 
-// nextChunk splits off the next chunk to send. When no data remains it
-// returns (nil, true): the caller must then send the final zero-length
-// chunk that ends the transfer.
 func (st *incrOutState) nextChunk() ([]byte, bool) {
 	if len(st.data) == 0 {
 		return nil, true
@@ -770,18 +708,11 @@ type incrInState struct {
 	buf      []byte
 }
 
-// pasteRequest tracks one paste conversion in flight (L43): the
-// selection being pasted and which target in the fallback chain is
-// currently being tried.
 type pasteRequest struct {
 	selection xproto.Atom
 	targetIdx int
 }
 
-// pasteTargets returns the conversion targets for a paste, richest
-// first: UTF8_STRING, then the legacy STRING, TEXT and COMPOUND_TEXT
-// forms for owners that only offer those. Atoms that failed to intern
-// are left out.
 func (w *Window) pasteTargets() []xproto.Atom {
 	targets := make([]xproto.Atom, 0, 4)
 	for _, t := range []xproto.Atom{w.AtomUtf8String, xproto.AtomString, w.AtomText, w.AtomCompoundText} {
@@ -792,8 +723,6 @@ func (w *Window) pasteTargets() []xproto.Atom {
 	return targets
 }
 
-// selectionTime returns the timestamp to claim selection ownership with:
-// the last user event's time, falling back to CurrentTime (M31).
 func (w *Window) selectionTime() xproto.Timestamp {
 	if t := w.lastEventTime.Load(); t != 0 {
 		return xproto.Timestamp(t)
@@ -802,17 +731,12 @@ func (w *Window) selectionTime() xproto.Timestamp {
 }
 
 func (w *Window) SetClipboard(text string) {
-	// H12: snapshot the timestamp the selection is claimed with so the
-	// TIMESTAMP target can report when this owner took the selection.
 	ts := w.selectionTime()
 	w.clipMu.Lock()
 	w.clipboardText = text
 	w.clipboardTime = ts
 	w.clipMu.Unlock()
 	if w.AtomClipboard != 0 {
-		// M31: empty text releases ownership (owner None) instead of
-		// being silently ignored, so the clipboard can actually be
-		// cleared.
 		owner := w.Win
 		if text == "" {
 			owner = 0
@@ -822,8 +746,6 @@ func (w *Window) SetClipboard(text string) {
 }
 
 func (w *Window) SetPrimary(text string) {
-	// H12: snapshot the timestamp the selection is claimed with (see
-	// SetClipboard).
 	ts := w.selectionTime()
 	w.clipMu.Lock()
 	w.primaryText = text
@@ -836,7 +758,6 @@ func (w *Window) SetPrimary(text string) {
 	_ = xproto.SetSelectionOwner(w.X, owner, xproto.AtomPrimary, ts)
 }
 
-// eventTime extracts the X timestamp of events that carry one, or 0.
 func eventTime(ev xgb.Event) uint32 {
 	switch e := ev.(type) {
 	case xproto.KeyPressEvent:
@@ -870,7 +791,6 @@ func (w *Window) HandleSelectionRequest(e xproto.SelectionRequestEvent) {
 
 	success := false
 	if target == w.AtomMultiple && w.AtomMultiple != 0 {
-		// H12: MULTIPLE converts several targets in one request.
 		success = w.handleMultipleRequest(e)
 	} else {
 		success = w.serveSelectionTarget(e.Requestor, property, e.Selection, target)
@@ -899,8 +819,6 @@ func (w *Window) HandleSelectionRequest(e xproto.SelectionRequestEvent) {
 	w.X.Sync()
 }
 
-// selectionTargets is the conversion target list advertised for TARGETS
-// (H12): exactly the targets serveSelectionTarget can convert to.
 func (w *Window) selectionTargets() []uint32 {
 	targets := []uint32{
 		uint32(w.AtomTargets),
@@ -922,8 +840,6 @@ func (w *Window) selectionTargets() []uint32 {
 	return targets
 }
 
-// selectionTimestamp reports when the given selection was acquired (H12):
-// the stored acquisition time, falling back to the last event time.
 func (w *Window) selectionTimestamp(selection xproto.Atom) xproto.Timestamp {
 	w.clipMu.RLock()
 	defer w.clipMu.RUnlock()
@@ -937,9 +853,6 @@ func (w *Window) selectionTimestamp(selection xproto.Atom) xproto.Timestamp {
 	return w.selectionTime()
 }
 
-// serveSelectionTarget converts the selection to target and writes the
-// result into property on requestor, using INCR for oversize data. It
-// reports whether the conversion succeeded.
 func (w *Window) serveSelectionTarget(requestor xproto.Window, property xproto.Atom, selection xproto.Atom, target xproto.Atom) bool {
 	var text string
 	w.clipMu.RLock()
@@ -971,7 +884,6 @@ func (w *Window) serveSelectionTarget(requestor xproto.Window, property xproto.A
 	}
 
 	if target == w.AtomTimestamp && w.AtomTimestamp != 0 {
-		// H12: TIMESTAMP reports when the selection was acquired.
 		ts := w.selectionTimestamp(selection)
 		data := make([]byte, 4)
 		binary.LittleEndian.PutUint32(data, uint32(ts))
@@ -995,10 +907,6 @@ func (w *Window) serveSelectionTarget(requestor xproto.Window, property xproto.A
 			maxLen = 262112
 		}
 		if len(data) > maxLen && w.AtomIncr != 0 {
-			// Too large for a single request: use the INCR protocol
-			// instead of silently truncating. Tell the requestor the
-			// total size, then send the data in chunks as it deletes the
-			// property (see handlePropertyNotify).
 			size := make([]byte, 4)
 			binary.LittleEndian.PutUint32(size, uint32(len(data)))
 			_ = xproto.ChangeProperty(
@@ -1011,8 +919,7 @@ func (w *Window) serveSelectionTarget(requestor xproto.Window, property xproto.A
 				1,
 				size,
 			)
-			// Ask for PropertyNotify on the requestor window so we learn
-			// when it has read a chunk and is ready for the next one.
+
 			_ = xproto.ChangeWindowAttributes(
 				w.X,
 				requestor,
@@ -1031,8 +938,7 @@ func (w *Window) serveSelectionTarget(requestor xproto.Window, property xproto.A
 			w.incrMu.Unlock()
 			return true
 		}
-		// Fits in one request (or INCR is unavailable, in which case
-		// truncation is the only option left).
+
 		if len(data) > maxLen {
 			data = data[:maxLen]
 		}
@@ -1051,12 +957,6 @@ func (w *Window) serveSelectionTarget(requestor xproto.Window, property xproto.A
 	return false
 }
 
-// handleMultipleRequest serves a MULTIPLE conversion: the requestor's
-// property holds (target, property) atom pairs. Each pair is served with
-// serveSelectionTarget; a pair that cannot be served has its property
-// replaced with None (0) in the list, which is written back before the
-// reply. INCR works per pair because the owner-side transfer state is
-// keyed by (requestor, property).
 func (w *Window) handleMultipleRequest(e xproto.SelectionRequestEvent) bool {
 	reply, err := xproto.GetProperty(w.X, false, e.Requestor, e.Property, xproto.AtomAtom, 0, 1<<20).Reply()
 	if err != nil || reply == nil || reply.Format != 32 {
@@ -1071,7 +971,6 @@ func (w *Window) handleMultipleRequest(e xproto.SelectionRequestEvent) bool {
 			continue
 		}
 		if p[0] == w.AtomMultiple {
-			// MULTIPLE inside MULTIPLE is not servable.
 			pairs[i][1] = 0
 			continue
 		}
@@ -1088,8 +987,6 @@ func (w *Window) handleMultipleRequest(e xproto.SelectionRequestEvent) bool {
 	return true
 }
 
-// parseMultiplePairs decodes the (target, property) atom pairs of a
-// MULTIPLE request. A truncated tail is dropped; an empty list is nil.
 func parseMultiplePairs(value []byte) [][2]xproto.Atom {
 	n := len(value) / 8
 	if n == 0 {
@@ -1117,8 +1014,6 @@ func (w *Window) RequestPaste(selectionAtom xproto.Atom) {
 	w.requestPasteTarget(selectionAtom, targets[0])
 }
 
-// requestPasteTarget asks the selection owner to convert the selection
-// to target, storing the result in our TERRAT_SELECTION property.
 func (w *Window) requestPasteTarget(selectionAtom, target xproto.Atom) {
 	_ = xproto.ConvertSelection(
 		w.X,
@@ -1131,12 +1026,6 @@ func (w *Window) requestPasteTarget(selectionAtom, target xproto.Atom) {
 	w.X.Sync()
 }
 
-// retryPaste advances a failed paste conversion to the next target in
-// the chain. It reports whether a retry was issued: false when there
-// is no outstanding paste for this selection, or the chain is
-// exhausted. The event's Selection atom correlates the failure with
-// the request, so a stale notify (or a second paste that has already
-// replaced the pending one) can never advance the wrong chain.
 func (w *Window) retryPaste(e xproto.SelectionNotifyEvent) bool {
 	w.pasteMu.Lock()
 	pending := w.pastePending
@@ -1145,8 +1034,7 @@ func (w *Window) retryPaste(e xproto.SelectionNotifyEvent) bool {
 		return false
 	}
 	targets := w.pasteTargets()
-	// Find the failed target in the chain (the event carries it); fall
-	// back to the recorded index if it is not there.
+
 	idx := pending.targetIdx
 	for i, t := range targets {
 		if t == e.Target {
@@ -1168,15 +1056,10 @@ func (w *Window) retryPaste(e xproto.SelectionNotifyEvent) bool {
 
 func (w *Window) HandleSelectionNotify(e xproto.SelectionNotifyEvent) []byte {
 	if e.Property == 0 {
-		// The owner cannot convert to the requested target: retry
-		// with the next plainer target instead of dropping the
-		// paste silently.
 		w.retryPaste(e)
 		return nil
 	}
 
-	// The conversion succeeded (or an INCR transfer started): the
-	// request is no longer pending.
 	w.pasteMu.Lock()
 	if w.pastePending != nil && e.Selection == w.pastePending.selection {
 		w.pastePending = nil
@@ -1197,10 +1080,6 @@ func (w *Window) HandleSelectionNotify(e xproto.SelectionNotifyEvent) []byte {
 		return nil
 	}
 
-	// Incremental transfer: the owner sends the data in chunks. The
-	// GetProperty above already deleted the property, which tells the
-	// owner to send the first chunk; further chunks arrive as
-	// PropertyNotify events (see handlePropertyNotify).
 	if w.AtomIncr != 0 && reply.Type == w.AtomIncr {
 		total := uint32(0)
 		if len(reply.Value) >= 4 {
@@ -1219,11 +1098,7 @@ func (w *Window) HandleSelectionNotify(e xproto.SelectionNotifyEvent) []byte {
 	return reply.Value
 }
 
-// handlePropertyNotify serves in-progress INCR transfers. It returns the
-// completed pasted text when an incremental read finishes, or nil.
 func (w *Window) handlePropertyNotify(e xproto.PropertyNotifyEvent) []byte {
-	// Owner side: the requestor deleted the property, so it is ready for
-	// the next chunk of a transfer we are serving.
 	if e.State == xproto.PropertyDelete {
 		w.incrMu.Lock()
 		key := incrTransferKey{requestor: e.Window, property: e.Atom}
@@ -1235,7 +1110,7 @@ func (w *Window) handlePropertyNotify(e xproto.PropertyNotifyEvent) []byte {
 				delete(w.incrOut, key)
 			}
 			w.incrMu.Unlock()
-			// A zero-length chunk ends the transfer.
+
 			_ = xproto.ChangeProperty(w.X, xproto.PropModeReplace, e.Window, e.Atom, target, 8, uint32(len(chunk)), chunk)
 			w.X.Sync()
 			return nil
@@ -1243,16 +1118,12 @@ func (w *Window) handlePropertyNotify(e xproto.PropertyNotifyEvent) []byte {
 		w.incrMu.Unlock()
 	}
 
-	// Requestor side: a new chunk arrived for a paste we are receiving.
 	if e.Window == w.Win && e.State == xproto.PropertyNewValue {
 		return w.incrReadChunk(e.Atom)
 	}
 	return nil
 }
 
-// incrReadChunk reads one chunk of an in-progress incremental paste. It
-// returns the full pasted text once the owner sends the final zero-length
-// chunk, or nil while more chunks are expected.
 func (w *Window) incrReadChunk(property xproto.Atom) []byte {
 	w.incrMu.Lock()
 	st := w.incrIn
@@ -1303,11 +1174,6 @@ func (w *Window) eventLoop() {
 		}
 		ev, err := w.X.WaitForEvent()
 		if err != nil {
-			// The X connection is broken (e.g. the server went away).
-			// Back off briefly in case the error is transient, but
-			// never spin: after a few consecutive errors the loop exits
-			// and closes the event channel so the app can shut down
-			// instead of hanging at 100% CPU.
 			consecErrs++
 			if consecErrs >= 5 {
 				w.closeEvents()
@@ -1327,9 +1193,7 @@ func (w *Window) eventLoop() {
 			w.closeEvents()
 			return
 		}
-		// M31: remember the timestamp of the last user event so
-		// SetClipboard/SetPrimary can claim ownership with it instead
-		// of CurrentTime.
+
 		if t := eventTime(ev); t != 0 {
 			w.lastEventTime.Store(t)
 		}
@@ -1340,17 +1204,10 @@ func (w *Window) eventLoop() {
 	}
 }
 
-// handleEvent dispatches one X event. It reports true when the event loop
-// should exit (the event channel could not be written to, i.e. the app is
-// gone); the caller closes the channel.
 func (w *Window) handleEvent(ev xgb.Event) bool {
 	switch e := ev.(type) {
 	case xproto.MotionNotifyEvent:
-		// M32: coalesce the motion flood — a fast drag queues hundreds
-		// of MotionNotify events; forwarding all of them fills the
-		// 1024-slot event channel and stalls everything behind them
-		// (notably selection requests, whose requestors time out).
-		// Only the latest position matters.
+
 		latest, exit := w.coalesce(e, func(ev xgb.Event) bool {
 			_, ok := ev.(xproto.MotionNotifyEvent)
 			return ok
@@ -1416,8 +1273,7 @@ func (w *Window) handleEvent(ev xgb.Event) bool {
 			return true
 		}
 	case xproto.ConfigureNotifyEvent:
-		// M32: same coalescing as motion — a resize drag queues many
-		// ConfigureNotify events and only the latest size matters.
+
 		latest, exit := w.coalesce(e, func(ev xgb.Event) bool {
 			_, ok := ev.(xproto.ConfigureNotifyEvent)
 			return ok
@@ -1433,9 +1289,7 @@ func (w *Window) handleEvent(ev xgb.Event) bool {
 			return true
 		}
 	case xproto.ExposeEvent:
-		// Coalesce the expose flood like motion/configure (M32): a
-		// resize or window-manager repaint queues many exposes, and
-		// only one full redraw is needed.
+
 		if _, exit := w.coalesce(e, func(ev xgb.Event) bool {
 			_, ok := ev.(xproto.ExposeEvent)
 			return ok
@@ -1449,8 +1303,7 @@ func (w *Window) handleEvent(ev xgb.Event) bool {
 		if w.keyHandler != nil {
 			w.keyHandler.RefreshXKBState(w.X)
 		}
-		// L50: focus-in used to be swallowed here; forward it like
-		// FocusOutEvent so the app can react to regaining focus.
+
 		if !w.sendEvent(FocusInEvent{}) {
 			return true
 		}
@@ -1460,14 +1313,10 @@ func (w *Window) handleEvent(ev xgb.Event) bool {
 		}
 	case XKBStateNotifyEvent:
 		if len(e.Data) >= 14 && w.keyHandler != nil {
-			if e.Data[1] == 2 { // XkbStateNotify
+			if e.Data[1] == 2 {
 				w.keyHandler.SetGroup(e.Data[13])
 			}
-			if e.Data[1] == 1 { // XkbMapNotify: layout changed while
-				// running (setxkbmap, desktop switcher). The server
-				// sends this, not a core MappingNotify, so re-read
-				// the map here or dead keys/AltGr stay frozen at the
-				// startup layout.
+			if e.Data[1] == 1 {
 				_ = w.keyHandler.RefreshMapping(w.X)
 			}
 		}
@@ -1479,20 +1328,12 @@ func (w *Window) handleEvent(ev xgb.Event) bool {
 			return true
 		}
 	case xproto.KeymapNotifyEvent:
-		// The server sends KeymapNotify (not MappingNotify) when the
-		// keyboard layout changes under XKB, and also when the window
-		// gains focus. Re-read the map so dead keys/AltGr follow the
-		// current layout instead of staying frozen at startup.
+
 		if w.keyHandler != nil {
 			_ = w.keyHandler.RefreshMapping(w.X)
 		}
 	case xproto.SelectionRequestEvent:
-		// M32: serve selection requests on their own goroutine. The
-		// handler issues several X requests; doing it inline stalls
-		// the loop and every event behind it. xgb serializes all
-		// requests through a single sender goroutine, so concurrent
-		// calls are wire-safe; the shared state (clipboard cache,
-		// INCR transfers) is mutex-guarded.
+
 		go w.HandleSelectionRequest(e)
 	case xproto.SelectionNotifyEvent:
 		val := w.HandleSelectionNotify(e)
@@ -1508,9 +1349,7 @@ func (w *Window) handleEvent(ev xgb.Event) bool {
 			}
 		}
 	case xproto.SelectionClearEvent:
-		// M31: another client took the selection — drop our cached
-		// text so we never serve stale data for a selection we no
-		// longer own.
+
 		w.clipMu.Lock()
 		if e.Selection == xproto.AtomPrimary {
 			w.primaryText = ""
@@ -1519,10 +1358,7 @@ func (w *Window) handleEvent(ev xgb.Event) bool {
 		}
 		w.clipMu.Unlock()
 	case xproto.ClientMessageEvent:
-		// L50: only a WM_PROTOCOLS message carrying WM_DELETE_WINDOW
-		// closes the window. The old check ignored the message type,
-		// so any ClientMessage whose first data word happened to
-		// equal the delete-window atom would close the window.
+
 		if e.Type == w.AtomWmProtocols && e.Format == 32 && len(e.Data.Data32) > 0 && xproto.Atom(e.Data.Data32[0]) == w.AtomWmDeleteWindow {
 			if !w.sendEvent(CloseRequestEvent{}) {
 				return true
@@ -1532,11 +1368,6 @@ func (w *Window) handleEvent(ev xgb.Event) bool {
 	return false
 }
 
-// coalesce drains queued events, keeping the latest one for which same()
-// is true and handling any other queued event immediately, in order.
-// It reports true when handling one of those events asked the loop to
-// exit. At most 64 events are drained per call so a sustained flood
-// cannot starve the loop.
 func (w *Window) coalesce(first xgb.Event, same func(xgb.Event) bool) (xgb.Event, bool) {
 	latest := first
 	for i := 0; i < 64; i++ {
@@ -1556,10 +1387,6 @@ func (w *Window) coalesce(first xgb.Event, same func(xgb.Event) bool) (xgb.Event
 }
 
 func OpenURL(urlStr string) error {
-	// L62: only http(s) URLs may be opened. The app already checks
-	// this before calling, but OpenURL is exported — validate here
-	// too so a future caller cannot hand xdg-open a file://, ssh://
-	// or other scheme the terminal never meant to open.
 	parsed, err := url.ParseRequestURI(urlStr)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return fmt.Errorf("refusing to open non-http(s) URL %q", urlStr)

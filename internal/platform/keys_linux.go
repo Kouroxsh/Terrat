@@ -19,10 +19,7 @@ type KeyHandler struct {
 	keysyms           []xproto.Keysym
 	numLockMask       uint16
 	modeSwitchMask    uint16
-	// level3Mask is the modifier holding ISO_Level3_Shift (AltGr). It
-	// selects the third/fourth level of a key (e.g. EuroSign on us-intl),
-	// NOT a keyboard group — it must not be confused with Mode_switch
-	// (modeSwitchMask), which switches groups.
+
 	level3Mask   uint16
 	pendingDead  xproto.Keysym
 	xkbSupported bool
@@ -31,7 +28,6 @@ type KeyHandler struct {
 	activeGroup  byte
 }
 
-// XKBStateNotifyEvent is delivered when the XKB keyboard layout/group changes.
 type XKBStateNotifyEvent struct {
 	Data []byte
 }
@@ -55,7 +51,7 @@ func NewKeyHandler(X *xgb.Conn) (*KeyHandler, error) {
 		maxKeycode:        maxKey,
 		keysymsPerKeycode: mapping.KeysymsPerKeycode,
 		keysyms:           mapping.Keysyms,
-		numLockMask:       0x10, // Mod2 default
+		numLockMask:       0x10,
 	}
 	kh.detectNumLockMask(X)
 	kh.initXKB(X)
@@ -80,13 +76,12 @@ func (kh *KeyHandler) detectNumLockMask(X *xgb.Conn) {
 			for c := 0; c < int(kh.keysymsPerKeycode); c++ {
 				if idx+c < len(kh.keysyms) {
 					switch kh.keysyms[idx+c] {
-					case 0xff7f: // XK_Num_Lock
+					case 0xff7f:
 						kh.numLockMask = mask
-					case 0xff7e, 0xfe08, 0xfe09: // Mode_switch / ISO_Group_Shift
+					case 0xff7e, 0xfe08, 0xfe09:
 						kh.modeSwitchMask = mask
-					case 0xfe03: // ISO_Level3_Shift (AltGr): a level
-						// modifier, not a group switch — it selects the
-						// third/fourth level of the current group.
+					case 0xfe03:
+
 						kh.level3Mask = mask
 					}
 				}
@@ -105,7 +100,7 @@ func (kh *KeyHandler) initXKB(X *xgb.Conn) {
 
 	buf := make([]byte, 8)
 	buf[0] = ext.MajorOpcode
-	buf[1] = 0 // X_kbUseExtension
+	buf[1] = 0
 	xgb.Put16(buf[2:], 2)
 	xgb.Put16(buf[4:], 1)
 	xgb.Put16(buf[6:], 0)
@@ -120,16 +115,13 @@ func (kh *KeyHandler) initXKB(X *xgb.Conn) {
 
 	reqSelect := make([]byte, 16)
 	reqSelect[0] = ext.MajorOpcode
-	reqSelect[1] = 1 // X_kbSelectEvents
+	reqSelect[1] = 1
 	xgb.Put16(reqSelect[2:], 4)
-	xgb.Put16(reqSelect[4:], 0x0100) // XkbUseCoreKbd
-	// Select both XkbStateNotify (0x0004, group changes) and
-	// XkbMapNotify (0x0002, layout changes): an XKB layout switch sends
-	// MapNotify, not a core MappingNotify, so without it the key map
-	// (dead keys, AltGr) would stay frozen at the startup layout.
-	xgb.Put16(reqSelect[6:], 0x0006) // affectWhich: MapNotify|StateNotify
+	xgb.Put16(reqSelect[4:], 0x0100)
+
+	xgb.Put16(reqSelect[6:], 0x0006)
 	xgb.Put16(reqSelect[8:], 0)
-	xgb.Put16(reqSelect[10:], 0x0006) // selectAll: MapNotify|StateNotify
+	xgb.Put16(reqSelect[10:], 0x0006)
 
 	cookieSelect := X.NewCookie(false, false)
 	X.NewRequest(reqSelect, cookieSelect)
@@ -139,24 +131,12 @@ func (kh *KeyHandler) initXKB(X *xgb.Conn) {
 	kh.RefreshXKBState(X)
 }
 
-// xkbEventFuncsMu guards registration of the XKB event parser in the
-// global xgb.NewEventFuncs map (L62): NewKeyHandler runs while the
-// event loop reads that map to parse incoming events, so an unguarded
-// write is a data race — and a second window would silently overwrite
-// the first's handler with an identical one. The handler is
-// stateless, so registering once is enough.
 var xkbEventFuncsMu sync.Mutex
 
 func registerXKBEventFunc(firstEvent byte) {
 	xkbEventFuncsMu.Lock()
 	defer xkbEventFuncsMu.Unlock()
-	// XKB events share one extension base code, with the specific kind
-	// in the second byte: 0 NewKeyboard, 1 MapNotify, 2 StateNotify.
-	// But the X event TYPE is base+kind, so a parser must be registered
-	// for each kind — registering only base+0 (as before) made xgb drop
-	// MapNotify and StateNotify entirely, so layout/group changes were
-	// never seen. All three parse to XKBStateNotifyEvent; the handler
-	// tells them apart by Data[1].
+
 	for kind := 0; kind <= 2; kind++ {
 		code := int(firstEvent) + kind
 		if _, ok := xgb.NewEventFuncs[code]; ok {
@@ -174,9 +154,9 @@ func (kh *KeyHandler) RefreshXKBState(X *xgb.Conn) {
 	}
 	reqState := make([]byte, 8)
 	reqState[0] = kh.xkbOpcode
-	reqState[1] = 4 // X_kbGetState
+	reqState[1] = 4
 	xgb.Put16(reqState[2:], 2)
-	xgb.Put16(reqState[4:], 0x0100) // XkbUseCoreKbd
+	xgb.Put16(reqState[4:], 0x0100)
 
 	cookieState := X.NewCookie(true, true)
 	X.NewRequest(reqState, cookieState)
@@ -190,11 +170,6 @@ func (kh *KeyHandler) SetGroup(group byte) {
 	kh.activeGroup = group & 3
 }
 
-// keysymAt returns the keysym at row idx, column c, or 0 when the
-// keyboard mapping reply was short for that keycode. A truncated
-// GetKeyboardMapping reply used to panic the event-loop goroutine on a
-// bare kh.keysyms[idx+col] (L49) — every row access below goes through
-// here, so a short reply degrades to "unknown key" instead of a crash.
 func (kh *KeyHandler) keysymAt(idx, c int) xproto.Keysym {
 	if idx+c < 0 || idx+c >= len(kh.keysyms) {
 		return 0
@@ -212,7 +187,6 @@ func (kh *KeyHandler) KeySym(ev xproto.KeyPressEvent) xproto.Keysym {
 		return 0
 	}
 
-	// In X11, bits 13-14 specify keyboard group (0-3) for layout switching
 	group := int((ev.State >> 13) & 3)
 	if group == 0 && kh.modeSwitchMask != 0 && (ev.State&kh.modeSwitchMask) != 0 {
 		group = 1
@@ -221,14 +195,6 @@ func (kh *KeyHandler) KeySym(ev xproto.KeyPressEvent) xproto.Keysym {
 		group = int(kh.activeGroup)
 	}
 
-	// coreIndex maps an XKB (group, level) to the column of the core
-	// keyboard mapping row for that key. The X server lays the row out
-	// in two bands: levels 0-1 of every group first (index group*2+level),
-	// then levels 2-3 of every group (index 4+group*2+(level-2)). The
-	// band boundary is 4 because the server always reserves two group
-	// slots in the first band (a single-group layout mirrors group 0
-	// into the second slot). Layouts with three or more groups lay the
-	// second band out differently and are not covered by this formula.
 	coreIndex := func(group, level int) int {
 		if level < 2 {
 			return group*2 + level
@@ -237,7 +203,7 @@ func (kh *KeyHandler) KeySym(ev xproto.KeyPressEvent) xproto.Keysym {
 	}
 
 	isShift := (ev.State & ModShift) != 0
-	isLock := (ev.State & ModLock) != 0 // CapsLock
+	isLock := (ev.State & ModLock) != 0
 	isLevel3 := kh.level3Mask != 0 && (ev.State&kh.level3Mask) != 0
 
 	isKP := false
@@ -249,8 +215,6 @@ func (kh *KeyHandler) KeySym(ev xproto.KeyPressEvent) xproto.Keysym {
 		}
 	}
 
-	// Level: bit 0 is Shift, bit 1 is Level3 (AltGr). The keypad has no
-	// Level3 symbols; NumLock inverts Shift there instead.
 	level := 0
 	if isKP {
 		isNumLock := (ev.State & kh.numLockMask) != 0
@@ -267,10 +231,7 @@ func (kh *KeyHandler) KeySym(ev xproto.KeyPressEvent) xproto.Keysym {
 	}
 
 	keysym := kh.keysymAt(idx, coreIndex(group, level))
-	// Fall back within the group: strip Level3, then Shift, then both.
-	// (A shifted key with no shifted symbol still yields its base key,
-	// as before; an AltGr key with no third-level symbol yields its
-	// unshifted/shifted form rather than nothing.)
+
 	if keysym == 0 {
 		for _, l := range []int{level & 1, level & 2, 0} {
 			if l == level {
@@ -281,7 +242,7 @@ func (kh *KeyHandler) KeySym(ev xproto.KeyPressEvent) xproto.Keysym {
 			}
 		}
 	}
-	// Fall back to group 0 with the same level cascade.
+
 	if keysym == 0 && group != 0 {
 		for _, l := range []int{level, level & 1, level & 2, 0} {
 			if keysym = kh.keysymAt(idx, coreIndex(0, l)); keysym != 0 {
@@ -290,12 +251,6 @@ func (kh *KeyHandler) KeySym(ev xproto.KeyPressEvent) xproto.Keysym {
 		}
 	}
 
-	// Apply CapsLock (L40): fold the case of the letter the keysym
-	// stands for, not just ASCII. Latin-1 and direct-Unicode keysyms
-	// equal their code points, so unicode.ToUpper/ToLower applies
-	// directly; legacy Greek/Cyrillic keysyms go through the lookup
-	// table in reverse — their case pairs are non-linear (0x07b1 ά ↔
-	// 0x07a1 Ά), so no arithmetic on the keysym can fold them.
 	if isLock {
 		if r, ok := KeysymToRune(keysym); ok && unicode.IsLetter(r) {
 			var folded rune
@@ -319,10 +274,6 @@ func (kh *KeyHandler) KeySym(ev xproto.KeyPressEvent) xproto.Keysym {
 	return keysym
 }
 
-// legacyKeysymByRune is the reverse of legacyGreekCyrillicKeysyms: the
-// keysym for a rune, for CapsLock folding (L40). A rune with two legacy
-// keysyms keeps the first — both produce the same rune, so it does not
-// matter which one is picked.
 var legacyKeysymByRune = func() map[rune]xproto.Keysym {
 	m := make(map[rune]xproto.Keysym, len(legacyGreekCyrillicKeysyms))
 	for ks, r := range legacyGreekCyrillicKeysyms {
@@ -352,13 +303,6 @@ func (kh *KeyHandler) RefreshMapping(X *xgb.Conn) error {
 	return nil
 }
 
-// funcKeySeq returns the xterm sequence for F1-F20 (L41). Modified keys
-// encode Shift/Alt/Ctrl as a `;{mod}` parameter (mod = 1 + shift + 2*alt
-// + 4*ctrl): Shift+F1 is ESC[1;2P, Ctrl+F5 is ESC[15;5~. Unmodified keys
-// keep their classic form (SS3 for F1-F4, tilde for F5+). F13-F20 use the
-// standard tilde codes (25, 26, 28, 29, 31-34); F21+ have no standard
-// xterm encoding and are still dropped. The Alt modifier lives in the
-// parameter, so callers must not also prepend an ESC (see Translate).
 func funcKeySeq(keysym xproto.Keysym, isShift, isAlt, isCtrl bool) []byte {
 	mod := 1
 	if isShift {
@@ -375,22 +319,22 @@ func funcKeySeq(keysym xproto.Keysym, isShift, isAlt, isCtrl bool) []byte {
 		param = fmt.Sprintf(";%d", mod)
 	}
 	switch keysym {
-	case 0xffbe: // F1
+	case 0xffbe:
 		if mod > 1 {
 			return []byte("\x1b[1" + param + "P")
 		}
 		return []byte("\x1bOP")
-	case 0xffbf: // F2
+	case 0xffbf:
 		if mod > 1 {
 			return []byte("\x1b[1" + param + "Q")
 		}
 		return []byte("\x1bOQ")
-	case 0xffc0: // F3
+	case 0xffc0:
 		if mod > 1 {
 			return []byte("\x1b[1" + param + "R")
 		}
 		return []byte("\x1bOR")
-	case 0xffc1: // F4
+	case 0xffc1:
 		if mod > 1 {
 			return []byte("\x1b[1" + param + "S")
 		}
@@ -414,10 +358,6 @@ func encodeRune(r rune) []byte {
 	return buf[:n]
 }
 
-// isDeadKeysym reports whether the keysym is a dead key with compose
-// support (XK_dead_* 0xfe50-0xfe6f, restricted to the ones with a spacing
-// form and a compose table below). Other dead keysyms fall through to
-// the ISO drop in Translate, as before.
 func isDeadKeysym(keysym xproto.Keysym) bool {
 	switch keysym {
 	case 0xfe50, 0xfe51, 0xfe52, 0xfe53, 0xfe54, 0xfe55, 0xfe56, 0xfe57,
@@ -428,112 +368,105 @@ func isDeadKeysym(keysym xproto.Keysym) bool {
 	return false
 }
 
-// deadSpacing is the standalone (spacing) form of a dead key, emitted
-// when it is followed by a key it does not compose with (dead_acute +
-// space is ´, dead_acute + x is ´x).
 func deadSpacing(keysym xproto.Keysym) rune {
 	switch keysym {
-	case 0xfe50: // dead_grave
+	case 0xfe50:
 		return '\u0060'
-	case 0xfe51: // dead_acute
+	case 0xfe51:
 		return '\u00b4'
-	case 0xfe52: // dead_circumflex
+	case 0xfe52:
 		return '\u005e'
-	case 0xfe53: // dead_tilde
+	case 0xfe53:
 		return '\u007e'
-	case 0xfe54: // dead_macron
+	case 0xfe54:
 		return '\u00af'
-	case 0xfe55: // dead_breve
+	case 0xfe55:
 		return '\u02d8'
-	case 0xfe56: // dead_abovedot
+	case 0xfe56:
 		return '\u02d9'
-	case 0xfe57: // dead_diaeresis
+	case 0xfe57:
 		return '\u00a8'
-	case 0xfe58: // dead_abovering
+	case 0xfe58:
 		return '\u02da'
-	case 0xfe59: // dead_doubleacute
+	case 0xfe59:
 		return '\u02dd'
-	case 0xfe5a: // dead_caron
+	case 0xfe5a:
 		return '\u02c7'
-	case 0xfe5b: // dead_cedilla
+	case 0xfe5b:
 		return '\u00b8'
-	case 0xfe5c: // dead_ogonek
+	case 0xfe5c:
 		return '\u02db'
-	case 0xfe60: // dead_belowdot
+	case 0xfe60:
 		return '\u002e'
-	case 0xfe61: // dead_hook
+	case 0xfe61:
 		return '\u02bc'
-	case 0xfe62: // dead_horn
+	case 0xfe62:
 		return '\u02bc'
-	case 0xfe63: // dead_stroke
+	case 0xfe63:
 		return '\u002f'
-	case 0xfe64: // dead_abovecomma
+	case 0xfe64:
 		return '\u02bc'
-	case 0xfe65: // dead_abovereversedcomma
+	case 0xfe65:
 		return '\u02bd'
-	case 0xfe66: // dead_doublegrave
+	case 0xfe66:
 		return '\u02f5'
-	case 0xfe6e: // dead_belowcomma
+	case 0xfe6e:
 		return '\u002c'
 	}
 	return ' '
 }
 
-// deadCompose maps a dead keysym to the precomposed character for each
-// base letter, transcribed from the standard X11 compose sequences.
-// A dead key followed by space yields its spacing form (deadSpacing),
-// so space is listed explicitly for every dead key.
 var deadCompose = map[xproto.Keysym]map[rune]rune{
-	0xfe50: { // dead_grave
+	0xfe50: {
 		'a': '\u00e0', 'e': '\u00e8', 'i': '\u00ec', 'o': '\u00f2', 'u': '\u00f9',
 		'A': '\u00c0', 'E': '\u00c8', 'I': '\u00cc', 'O': '\u00d2', 'U': '\u00d9',
 		'n': '\u01f9', 'N': '\u01f8', ' ': '\u0060',
 	},
-	0xfe51: { // dead_acute
+	0xfe51: {
 		'a': '\u00e1', 'e': '\u00e9', 'i': '\u00ed', 'o': '\u00f3', 'u': '\u00fa', 'y': '\u00fd',
 		'A': '\u00c1', 'E': '\u00c9', 'I': '\u00cd', 'O': '\u00d3', 'U': '\u00da', 'Y': '\u00dd',
 		'c': '\u0107', 'C': '\u0106', 'n': '\u0144', 'N': '\u0143', 's': '\u015b', 'S': '\u015a',
 		'z': '\u017a', 'Z': '\u0179', 'l': '\u013a', 'L': '\u0139', 'r': '\u0155', 'R': '\u0154',
 		'g': '\u01f5', 'G': '\u01f4', ' ': '\u00b4',
 	},
-	0xfe52: { // dead_circumflex
+	0xfe52: {
 		'a': '\u00e2', 'e': '\u00ea', 'i': '\u00ee', 'o': '\u00f4', 'u': '\u00fb',
 		'A': '\u00c2', 'E': '\u00ca', 'I': '\u00ce', 'O': '\u00d4', 'U': '\u00db',
 		'c': '\u0109', 'C': '\u0108', 'g': '\u011d', 'G': '\u011c', 'h': '\u0125', 'H': '\u0124',
 		'j': '\u0135', 'J': '\u0134', 's': '\u015d', 'S': '\u015c', 'w': '\u0175', 'W': '\u0174',
 		'y': '\u0177', 'Y': '\u0176', ' ': '\u005e',
 	},
-	0xfe53: { // dead_tilde
+	0xfe53: {
 		'a': '\u00e3', 'e': '\u1ebd', 'i': '\u0129', 'o': '\u00f5', 'u': '\u0169',
 		'A': '\u00c3', 'E': '\u1ebc', 'I': '\u0128', 'O': '\u00d5', 'U': '\u0168',
 		'n': '\u00f1', 'N': '\u00d1', ' ': '\u007e',
 	},
-	0xfe54: { // dead_macron
+	0xfe54: {
 		'a': '\u0101', 'e': '\u0113', 'i': '\u012b', 'o': '\u014d', 'u': '\u016b',
 		'A': '\u0100', 'E': '\u0112', 'I': '\u012a', 'O': '\u014c', 'U': '\u016a',
 		'g': '\u1e21', 'G': '\u1e20', ' ': '\u00af',
 	},
-	0xfe55: { // dead_breve
+	0xfe55: {
 		'a': '\u0103', 'e': '\u0115', 'i': '\u012d', 'o': '\u014f', 'u': '\u016d',
 		'A': '\u0102', 'E': '\u0114', 'I': '\u012c', 'O': '\u014e', 'U': '\u016c',
 		'g': '\u011f', 'G': '\u011e', ' ': '\u02d8',
 	},
-	0xfe56: { // dead_abovedot
+	0xfe56: {
 		'c': '\u010b', 'C': '\u010a', 'e': '\u0117', 'E': '\u0116', 'g': '\u0121', 'G': '\u0120',
 		'z': '\u017c', 'Z': '\u017b', ' ': '\u02d9',
 	},
-	0xfe57: { // dead_diaeresis
+	0xfe57: {
 		'a': '\u00e4', 'e': '\u00eb', 'i': '\u00ef', 'o': '\u00f6', 'u': '\u00fc', 'y': '\u00ff',
 		'A': '\u00c4', 'E': '\u00cb', 'I': '\u00cf', 'O': '\u00d6', 'U': '\u00dc', 'Y': '\u0178',
 		' ': '\u00a8',
 	},
-	0xfe58: { // dead_abovering
+	0xfe58: {
 		'a': '\u00e5', 'A': '\u00c5', 'u': '\u016f', 'U': '\u016e', ' ': '\u02da',
 	},
-	0xfe59: { // dead_doubleacute
+	0xfe59: {
 		'o': '\u0151', 'u': '\u0171', 'O': '\u0150', 'U': '\u0170', ' ': '\u02dd',
 	},
-	0xfe5a: { // dead_caron
+	0xfe5a: {
 		'a': '\u01ce', 'A': '\u01cd', 'c': '\u010d', 'C': '\u010c', 'd': '\u010f', 'D': '\u010e',
 		'e': '\u011b', 'E': '\u011a', 'g': '\u01e7', 'G': '\u01e6', 'h': '\u021f', 'H': '\u021e',
 		'i': '\u01d0', 'I': '\u01cf', 'j': '\u01f0', 'k': '\u01e9', 'K': '\u01e8',
@@ -541,52 +474,49 @@ var deadCompose = map[xproto.Keysym]map[rune]rune{
 		'r': '\u0159', 'R': '\u0158', 's': '\u0161', 'S': '\u0160', 't': '\u0165', 'T': '\u0164',
 		'u': '\u01d4', 'U': '\u01d3', 'z': '\u017e', 'Z': '\u017d', ' ': '\u02c7',
 	},
-	0xfe5b: { // dead_cedilla
+	0xfe5b: {
 		'c': '\u00e7', 'C': '\u00c7', 's': '\u015f', 'S': '\u015e', 't': '\u0163', 'T': '\u0162',
 		'n': '\u0146', 'N': '\u0145', 'r': '\u0157', 'R': '\u0156', 'l': '\u013c', 'L': '\u013b',
 		'g': '\u0123', 'G': '\u0122', 'k': '\u0137', 'K': '\u0136', ' ': '\u00b8',
 	},
-	0xfe5c: { // dead_ogonek
+	0xfe5c: {
 		'a': '\u0105', 'e': '\u0119', 'i': '\u012f', 'o': '\u01eb', 'u': '\u0173',
 		'A': '\u0104', 'E': '\u0118', 'I': '\u012e', 'O': '\u01ea', 'U': '\u0172',
 		' ': '\u02db',
 	},
-	0xfe60: { // dead_belowdot
+	0xfe60: {
 		'a': '\u1ea1', 'e': '\u1eb9', 'i': '\u1ecb', 'o': '\u1ecd', 'u': '\u1ee5', 'y': '\u1ef5',
 		'A': '\u1ea0', 'E': '\u1eb8', 'I': '\u1eca', 'O': '\u1ecc', 'U': '\u1ee4', 'Y': '\u1ef4',
 		' ': '\u002e',
 	},
-	0xfe61: { // dead_hook
+	0xfe61: {
 		'a': '\u1ea3', 'e': '\u1ebb', 'i': '\u1ec9', 'o': '\u1ecf', 'u': '\u1ee7', 'y': '\u1ef7',
 		'A': '\u1ea2', 'E': '\u1eba', 'I': '\u1ec8', 'O': '\u1ece', 'U': '\u1ee6', 'Y': '\u1ef6',
 		' ': '\u02bc',
 	},
-	0xfe62: { // dead_horn
+	0xfe62: {
 		'o': '\u01a1', 'u': '\u01b0', 'O': '\u01a0', 'U': '\u01af', ' ': '\u02bc',
 	},
-	0xfe63: { // dead_stroke
+	0xfe63: {
 		'o': '\u00f8', 'O': '\u00d8', 'l': '\u0142', 'L': '\u0141', 'd': '\u0111', 'D': '\u0110',
 		'h': '\u0127', 'H': '\u0126', 't': '\u0167', 'T': '\u0166', ' ': '\u002f',
 	},
-	0xfe64: { // dead_abovecomma
+	0xfe64: {
 		' ': '\u02bc',
 	},
-	0xfe65: { // dead_abovereversedcomma
+	0xfe65: {
 		' ': '\u02bd',
 	},
-	0xfe66: { // dead_doublegrave
+	0xfe66: {
 		'a': '\u0201', 'e': '\u0205', 'i': '\u0209', 'o': '\u020d', 'u': '\u0215',
 		'A': '\u0200', 'E': '\u0204', 'I': '\u0208', 'O': '\u020c', 'U': '\u0214',
 		'r': '\u0211', 'R': '\u0210', ' ': '\u02f5',
 	},
-	0xfe6e: { // dead_belowcomma
+	0xfe6e: {
 		's': '\u0219', 'S': '\u0218', 't': '\u021b', 'T': '\u021a', ' ': '\u002c',
 	},
 }
 
-// composeDead returns the precomposed character for a dead key followed
-// by a base letter, or false when the combination has no precomposed
-// form (the caller then emits the dead key's spacing form instead).
 func composeDead(dead xproto.Keysym, base rune) (rune, bool) {
 	if m, ok := deadCompose[dead]; ok {
 		if r, ok := m[base]; ok {
@@ -602,8 +532,6 @@ func (kh *KeyHandler) Translate(ev xproto.KeyPressEvent, flags ...bool) ([]byte,
 		return nil, ActionNone
 	}
 
-	// flags[0] is application-cursor mode; flags[1], when present,
-	// reports whether the terminal is on the alternate screen (L42).
 	isAppCursor := len(flags) > 0 && flags[0]
 	isAltScreen := len(flags) > 1 && flags[1]
 	state := ev.State
@@ -611,8 +539,6 @@ func (kh *KeyHandler) Translate(ev xproto.KeyPressEvent, flags ...bool) ([]byte,
 	isCtrl := (state & ModCtrl) != 0
 	isAlt := (state & ModAlt) != 0
 
-	// ISO_Left_Tab (0xfe20) is what XKB reports for Shift+Tab, so the 0xff09
-	// case below never sees it. Handle it here, before the dead-key filter.
 	if keysym == 0xfe20 {
 		if isCtrl && isShift {
 			return nil, ActionPrevTab
@@ -623,11 +549,6 @@ func (kh *KeyHandler) Translate(ev xproto.KeyPressEvent, flags ...bool) ([]byte,
 		return []byte("\x1b[Z"), ActionNone
 	}
 
-	// Dead keys (0xfe50-0xfe6f) are not characters on their own: the
-	// press is remembered and combined with the next character key
-	// (dead_acute + e is é). A dead key followed by another dead key
-	// emits the first one's spacing form and arms the second. Any other
-	// key cancels a pending dead key without composing (see below).
 	if isDeadKeysym(keysym) {
 		if kh.pendingDead != 0 {
 			prev := kh.pendingDead
@@ -645,20 +566,13 @@ func (kh *KeyHandler) Translate(ev xproto.KeyPressEvent, flags ...bool) ([]byte,
 			if composed, ok := composeDead(dead, r); ok {
 				return encodeRune(composed), ActionNone
 			}
-			// No precomposed form: spacing accent + the character,
-			// exactly as X11 compose does (dead_acute + x is ´x).
+
 			return append(encodeRune(deadSpacing(dead)), encodeRune(r)...), ActionNone
 		}
-		// Not a character key (or a modified one): the pending dead key
-		// is discarded and the key is handled normally below.
+
 		kh.pendingDead = 0
 	}
 
-	// Dead keys (0xfe50+), compose/multi-key and the other ISO function
-	// keysyms (0xfe00-0xfeff) and the 3270 range (0xfd00-0xfdff) are not
-	// characters: drop them silently instead of leaking their code points
-	// as UTF-8 into the PTY. AltGr (0xfe03) and Mode_switch (0xfe08/0xfe09)
-	// are modifiers, so the key press itself must also produce nothing.
 	if keysym >= 0xfd00 && keysym <= 0xfeff {
 		return nil, ActionNone
 	}
@@ -732,10 +646,6 @@ func (kh *KeyHandler) Translate(ev xproto.KeyPressEvent, flags ...bool) ([]byte,
 		}
 	}
 
-	// L42: Shift+PgUp/PgDn/Home/End scroll the terminal — but only on
-	// the normal screen. Inside a fullscreen app (vim, less, ...) the
-	// keys must reach the app instead; the shifted sequences are emitted
-	// by the switch below.
 	if !isAltScreen {
 		if (keysym == 0xff55 || keysym == 0xff9a) && isShift {
 			return nil, ActionScrollUp
@@ -767,9 +677,6 @@ func (kh *KeyHandler) Translate(ev xproto.KeyPressEvent, flags ...bool) ([]byte,
 	}
 
 	if isCtrl {
-		// Ctrl+letter / Ctrl+symbol produce a control byte; with Alt held
-		// too, prefix ESC so the Alt modifier is not lost (Ctrl+Alt+a is
-		// ESC 0x01, as readline/Emacs expect).
 		var ctrl []byte
 		if keysym >= 'a' && keysym <= 'z' {
 			ctrl = []byte{byte(keysym - 'a' + 1)}
@@ -789,8 +696,7 @@ func (kh *KeyHandler) Translate(ev xproto.KeyPressEvent, flags ...bool) ([]byte,
 				ctrl = []byte{0x1e}
 			case '_':
 				ctrl = []byte{0x1f}
-			// L39: Ctrl+Space is NUL (0x00), not a space — the old code
-			// fell through and sent 0x20. Ctrl+/ is 0x1f, not 0x2f.
+
 			case ' ':
 				ctrl = []byte{0x00}
 			case '/':
@@ -805,101 +711,91 @@ func (kh *KeyHandler) Translate(ev xproto.KeyPressEvent, flags ...bool) ([]byte,
 		}
 	}
 
-	// L41: function keys, with modifiers encoded (see funcKeySeq). This
-	// runs before the sequence switch so the Alt modifier is not also
-	// prepended as an ESC by the switch's trailing Alt handling.
 	if seq := funcKeySeq(keysym, isShift, isAlt, isCtrl); seq != nil {
 		return seq, ActionNone
 	}
 
 	var seq []byte
 	switch keysym {
-	// Keypad numbers (0-9)
 	case 0xffb0, 0xffb1, 0xffb2, 0xffb3, 0xffb4, 0xffb5, 0xffb6, 0xffb7, 0xffb8, 0xffb9:
 		seq = []byte{byte('0' + (keysym - 0xffb0))}
 
-	// Keypad arithmetic and separators
-	case 0xffaa: // KP_Multiply
+	case 0xffaa:
 		seq = []byte("*")
-	case 0xffab: // KP_Add
+	case 0xffab:
 		seq = []byte("+")
-	case 0xffac: // KP_Separator
+	case 0xffac:
 		seq = []byte(",")
-	case 0xffad: // KP_Subtract
+	case 0xffad:
 		seq = []byte("-")
-	case 0xffae: // KP_Decimal
+	case 0xffae:
 		seq = []byte(".")
-	case 0xffaf: // KP_Divide
+	case 0xffaf:
 		seq = []byte("/")
-	case 0xffbd: // KP_Equal
+	case 0xffbd:
 		seq = []byte("=")
-	case 0xff80: // KP_Space
+	case 0xff80:
 		seq = []byte(" ")
-	case 0xff89: // KP_Tab
+	case 0xff89:
 		seq = []byte("\t")
 
-	// Keypad navigation (when NumLock is OFF)
-	case 0xff95: // KP_Home
+	case 0xff95:
 		if isShift {
-			// L42: shifted Home in a fullscreen app.
 			seq = []byte("\x1b[1;2H")
 		} else if isAppCursor {
 			seq = []byte("\x1bOH")
 		} else {
 			seq = []byte("\x1b[H")
 		}
-	case 0xff96: // KP_Left
+	case 0xff96:
 		if isAppCursor {
 			seq = []byte("\x1bOD")
 		} else {
 			seq = []byte("\x1b[D")
 		}
-	case 0xff97: // KP_Up
+	case 0xff97:
 		if isAppCursor {
 			seq = []byte("\x1bOA")
 		} else {
 			seq = []byte("\x1b[A")
 		}
-	case 0xff98: // KP_Right
+	case 0xff98:
 		if isAppCursor {
 			seq = []byte("\x1bOC")
 		} else {
 			seq = []byte("\x1b[C")
 		}
-	case 0xff99: // KP_Down
+	case 0xff99:
 		if isAppCursor {
 			seq = []byte("\x1bOB")
 		} else {
 			seq = []byte("\x1b[B")
 		}
-	case 0xff9a: // KP_Prior (Page Up)
+	case 0xff9a:
 		if isShift {
-			// L42: shifted Page Up in a fullscreen app.
 			seq = []byte("\x1b[5;2~")
 		} else {
 			seq = []byte("\x1b[5~")
 		}
-	case 0xff9b: // KP_Next (Page Down)
+	case 0xff9b:
 		if isShift {
-			// L42: shifted Page Down in a fullscreen app.
 			seq = []byte("\x1b[6;2~")
 		} else {
 			seq = []byte("\x1b[6~")
 		}
-	case 0xff9c: // KP_End
+	case 0xff9c:
 		if isShift {
-			// L42: shifted End in a fullscreen app.
 			seq = []byte("\x1b[1;2F")
 		} else if isAppCursor {
 			seq = []byte("\x1bOF")
 		} else {
 			seq = []byte("\x1b[F")
 		}
-	case 0xff9d: // KP_Begin (Center 5)
+	case 0xff9d:
 		seq = []byte("\x1b[E")
-	case 0xff9e: // KP_Insert
+	case 0xff9e:
 		seq = []byte("\x1b[2~")
-	case 0xff9f: // KP_Delete
+	case 0xff9f:
 		seq = []byte("\x1b[3~")
 	case 0xff0d, 0xff8d:
 		seq = []byte("\r")
@@ -919,7 +815,6 @@ func (kh *KeyHandler) Translate(ev xproto.KeyPressEvent, flags ...bool) ([]byte,
 		seq = []byte("\x1b[2~")
 	case 0xff50:
 		if isShift {
-			// L42: shifted Home in a fullscreen app.
 			seq = []byte("\x1b[1;2H")
 		} else if isAppCursor {
 			seq = []byte("\x1bOH")
@@ -928,7 +823,6 @@ func (kh *KeyHandler) Translate(ev xproto.KeyPressEvent, flags ...bool) ([]byte,
 		}
 	case 0xff57:
 		if isShift {
-			// L42: shifted End in a fullscreen app.
 			seq = []byte("\x1b[1;2F")
 		} else if isAppCursor {
 			seq = []byte("\x1bOF")
@@ -937,14 +831,12 @@ func (kh *KeyHandler) Translate(ev xproto.KeyPressEvent, flags ...bool) ([]byte,
 		}
 	case 0xff55:
 		if isShift {
-			// L42: shifted Page Up in a fullscreen app.
 			seq = []byte("\x1b[5;2~")
 		} else {
 			seq = []byte("\x1b[5~")
 		}
 	case 0xff56:
 		if isShift {
-			// L42: shifted Page Down in a fullscreen app.
 			seq = []byte("\x1b[6;2~")
 		} else {
 			seq = []byte("\x1b[6~")
@@ -973,13 +865,9 @@ func (kh *KeyHandler) Translate(ev xproto.KeyPressEvent, flags ...bool) ([]byte,
 		} else {
 			seq = []byte("\x1b[D")
 		}
-
-		// NB: F1-F20 are handled by funcKeySeq before this switch (L41).
 	}
 
 	if seq != nil {
-		// Alt+special key: ESC plus the key's sequence (Alt+Up is ESC
-		// ESC[A), so applications can tell it apart from the bare key.
 		if isAlt {
 			return append([]byte{0x1b}, seq...), ActionNone
 		}
@@ -990,9 +878,6 @@ func (kh *KeyHandler) Translate(ev xproto.KeyPressEvent, flags ...bool) ([]byte,
 		buf := make([]byte, 4)
 		n := utf8.EncodeRune(buf, r)
 		if isAlt {
-			// Alt+printable key: ESC followed by the character, so the
-			// application sees the Alt modifier (Alt+b/f/d in readline,
-			// Alt+Backspace, ...).
 			return append([]byte{0x1b}, buf[:n]...), ActionNone
 		}
 		return buf[:n], ActionNone
@@ -1001,13 +886,6 @@ func (kh *KeyHandler) Translate(ev xproto.KeyPressEvent, flags ...bool) ([]byte,
 	return nil, ActionNone
 }
 
-// legacyGreekCyrillicKeysyms maps the legacy X11 Greek/Cyrillic keysyms
-// (0x06a1-0x06ff, 0x07a1-0x07f9) to their Unicode runes, transcribed from
-// X11/keysymdef.h. The correspondence is non-linear, so no formula can
-// replace this table: e.g. XK_Cyrillic_a 0x06c1 is U+0430 and
-// XK_Greek_ALPHA 0x07c1 is U+0391. Modern XKB layouts report these letters
-// as direct Unicode keysyms (0x03xx/0x04xx or 0x01000000-based) and never
-// reach this table; it only serves old servers/layouts.
 var legacyGreekCyrillicKeysyms = map[xproto.Keysym]rune{
 	0x06a1: '\u0452', 0x06a2: '\u0453', 0x06a3: '\u0451', 0x06a4: '\u0454', 0x06a5: '\u0455',
 	0x06a6: '\u0456', 0x06a7: '\u0457', 0x06a8: '\u0458', 0x06a9: '\u0459', 0x06aa: '\u045a',
@@ -1045,14 +923,11 @@ var legacyGreekCyrillicKeysyms = map[xproto.Keysym]rune{
 	0x07f7: '\u03c7', 0x07f8: '\u03c8', 0x07f9: '\u03c9',
 }
 
-// KeysymToRune converts an X11 keysym to its corresponding Unicode rune.
 func KeysymToRune(keysym xproto.Keysym) (rune, bool) {
-	// Keypad numbers (0-9)
 	if keysym >= 0xffb0 && keysym <= 0xffb9 {
 		return rune('0' + (keysym - 0xffb0)), true
 	}
 
-	// Keypad arithmetic and special
 	switch keysym {
 	case 0xffaa:
 		return '*', true
@@ -1075,17 +950,15 @@ func KeysymToRune(keysym xproto.Keysym) (rune, bool) {
 	case 0xff8d:
 		return '\r', true
 	}
-	// Standard ASCII printable
+
 	if keysym >= 0x0020 && keysym <= 0x007e {
 		return rune(keysym), true
 	}
 
-	// Latin-1 Supplement
 	if keysym >= 0x00a0 && keysym <= 0x00ff {
 		return rune(keysym), true
 	}
 
-	// Direct Unicode keysyms (0x01000000 to 0x0110ffff)
 	if (keysym & 0xff000000) == 0x01000000 {
 		cp := rune(keysym & 0x00ffffff)
 		if cp >= 0x20 && cp <= 0x10ffff {
@@ -1093,17 +966,10 @@ func KeysymToRune(keysym xproto.Keysym) (rune, bool) {
 		}
 	}
 
-	// Dead keys, compose keys and the other ISO function keysyms
-	// (0xfd00-0xfeff) are not characters: never emit them as runes.
-	// (ISO_Left_Tab 0xfe20 is Shift+Tab and is handled in Translate
-	// before this function is reached.)
 	if keysym >= 0xfd00 && keysym <= 0xfeff {
 		return 0, false
 	}
 
-	// Legacy Greek/Cyrillic keysyms: look them up, never guess. A keysym in
-	// these ranges that is missing from the table is unmapped (e.g. 0x06a0,
-	// 0x07d3) and is dropped rather than mapped to a wrong character.
 	if r, ok := legacyGreekCyrillicKeysyms[keysym]; ok {
 		return r, true
 	}
@@ -1111,8 +977,6 @@ func KeysymToRune(keysym xproto.Keysym) (rune, bool) {
 		return 0, false
 	}
 
-	// Unicode in standard range >= 0x0100 (excluding standard X11 special function keys 0xff00-0xffff)
-	// Modern XKB layouts (including Cyrillic and Greek) often map directly to Unicode codepoints
 	if keysym >= 0x0100 && keysym <= 0x10ffff && (keysym < 0xff00 || keysym > 0xffff) {
 		return rune(keysym), true
 	}

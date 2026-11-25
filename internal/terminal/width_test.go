@@ -9,31 +9,31 @@ func TestRuneWidth(t *testing.T) {
 	}{
 		{'a', 1},
 		{' ', 1},
-		{'é', 1},      // precomposed Latin-1
-		{'Ω', 1},      // Greek (ambiguous, counts as 1 outside East Asia)
-		{'ф', 1},      // Cyrillic
-		{'م', 1},      // Arabic letter
-		{'世', 2},      // CJK ideograph
-		{'界', 2},      // CJK ideograph
-		{'あ', 2},      // Hiragana
-		{'ア', 2},      // Katakana
-		{'한', 2},      // Hangul syllable
-		{'Ａ', 2},      // fullwidth Latin
-		{'😀', 2},      // emoji
-		{'🌍', 2},      // emoji
-		{'←', 1},      // arrow (ambiguous)
-		{'─', 1},      // box drawing
-		{'█', 1},      // full block
-		{'\u200c', 0}, // ZWNJ (Persian نیم‌فاصله)
-		{'\u200d', 0}, // ZWJ
-		{'\u200b', 0}, // zero width space
-		{'\u0301', 0}, // combining acute accent
-		{'\u064b', 0}, // Arabic combining mark (fathatan)
-		{'\ufe0f', 0}, // variation selector 16
-		{'\u2060', 0}, // word joiner
-		{'\ufeff', 0}, // BOM / zero width no-break space
-		{'\x01', 0},   // control character
-		{'\x7f', 0},   // DEL
+		{'é', 1},
+		{'Ω', 1},
+		{'ф', 1},
+		{'م', 1},
+		{'世', 2},
+		{'界', 2},
+		{'あ', 2},
+		{'ア', 2},
+		{'한', 2},
+		{'Ａ', 2},
+		{'😀', 2},
+		{'🌍', 2},
+		{'←', 1},
+		{'─', 1},
+		{'█', 1},
+		{'\u200c', 0},
+		{'\u200d', 0},
+		{'\u200b', 0},
+		{'\u0301', 0},
+		{'\u064b', 0},
+		{'\ufe0f', 0},
+		{'\u2060', 0},
+		{'\ufeff', 0},
+		{'\x01', 0},
+		{'\x7f', 0},
 	}
 	for _, c := range cases {
 		if got := RuneWidth(c.r); got != c.want {
